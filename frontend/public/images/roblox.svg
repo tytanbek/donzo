@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="rbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF0033"/>
+      <stop offset="100%" stop-color="#CC0022"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="40" fill="url(#rbGrad)"/>
+  <!-- Brick pattern -->
+  <rect x="55" y="55" width="90" height="90" rx="8" fill="none" stroke="#FFF" stroke-width="3" opacity="0.3"/>
+  <!-- R logo shape -->
+  <path d="M70 60 L130 60 L130 90 L95 90 L95 100 L130 100 L130 140 L95 140 L95 125 L80 140 L70 140 L95 115 L95 100 L70 100 Z" fill="#FFF"/>
+  <text x="100" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#FFF">ROBLOX</text>
+</svg>

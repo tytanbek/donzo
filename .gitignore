@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+venv/
+_archive/
+
+# Env / maxfiylar (repo'ga kirmaydi)
+.env
+.env.local
+.env.*.local
+
+# Lokal DB (PostgreSQL portable ma'lumotlari)
+backend/db.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.freebuff/
+backend/pgdata/
+
+# Lokal vositalar (tunnel binary, vs)
+cloudflared.exe
+ngrok.exe
+
+# Loglar
+*.log
+bot-stats.json
+
+# Node / frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.vercel/
+
+# OS
+Thumbs.db
+.DS_Store

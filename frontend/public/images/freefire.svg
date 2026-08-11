@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="ffGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B00"/>
+      <stop offset="100%" stop-color="#FF0000"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="40" fill="url(#ffGrad)"/>
+  <!-- Flame shape -->
+  <path d="M100 170 C130 150 145 120 140 95 C135 70 120 50 100 30 C80 50 65 70 60 95 C55 120 70 150 100 170Z" fill="#FFD700" opacity="0.9"/>
+  <path d="M100 155 C120 140 130 115 127 98 C124 80 113 65 100 50 C87 65 76 80 73 98 C70 115 80 140 100 155Z" fill="#FFF" opacity="0.6"/>
+  <path d="M100 140 C112 128 118 112 116 100 C114 88 107 78 100 68 C93 78 86 88 84 100 C82 112 88 128 100 140Z" fill="#FFF" opacity="0.3"/>
+  <text x="100" y="187" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="20" font-weight="900" fill="#FFD700">FREE FIRE</text>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="bsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FF8C00"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="40" fill="#1a1a2e"/>
+  <circle cx="100" cy="100" r="68" fill="url(#bsGrad)" opacity="0.15"/>
+  <circle cx="100" cy="100" r="50" fill="none" stroke="#FFD700" stroke-width="4"/>
+  <path d="M100 55 L115 85 L145 88 L122 110 L128 145 L100 128 L72 145 L78 110 L55 88 L85 85 Z" fill="#FFD700" stroke="#FF8C00" stroke-width="2"/>
+  <!-- Star in center -->
+  <circle cx="100" cy="100" r="10" fill="#FFD700"/>
+  <text x="100" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#FFD700">BRAWL STARS</text>
+</svg>

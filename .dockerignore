@@ -1,0 +1,23 @@
+# Docker build kontekstini kichik tutish — frontend va lokal infratuzilma
+# konteynerga kirmaydi (foydalanuvchi sessiyasi backend/sessions/ da qoladi).
+.git
+.gitignore
+frontend/
+.freebuff/
+node_modules
+*.sqlite3
+*.db
+.env
+.env.*
+*.log
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.vercel/
+venv/
+*.md
+cloudflared.exe
+ngrok.exe
+*.sqlite3-wal
+*.sqlite3-shm
