@@ -51,6 +51,10 @@ def read_bot_stats() -> dict:
             return dict(DEFAULT_STATS)
         for key, val in DEFAULT_STATS.items():
             data.setdefault(key, val)
+        # Legacy stats files wrote polling_errors as a dict ({}) — the
+        # admin panel expects an array. Normalize so the UI never crashes.
+        if not isinstance(data.get('polling_errors'), list):
+            data['polling_errors'] = []
         return data
     except Exception:
         return dict(DEFAULT_STATS)
