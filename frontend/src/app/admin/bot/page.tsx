@@ -326,7 +326,7 @@ export default function AdminBotStatusPage() {
           </div>
         ) : (
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-            {(Array.isArray(stats.polling_errors) ? stats.polling_errors : []).slice().reverse().map((err, i) => (
+            {(Array.isArray(stats.polling_errors) ? stats.polling_errors : []).slice().reverse().map((err: any, i: number) => (
               <div key={i} className="flex items-start gap-3 bg-[#0A0F1E] border border-white/5 rounded-lg px-3 py-2">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 mt-0.5 ${
                   err.kind === 'conflict_409'
