@@ -186,6 +186,21 @@ if not os.getenv('DB_NAME'):
         },
     }
 
+# Cloud deploy (Render/Neon): bitta DATABASE_URL env yetarli —
+# postgresql://user:pass@host:port/dbname  (Neon dashboard'dan nusxalanadi).
+if os.getenv('DATABASE_URL'):
+    from urllib.parse import unquote, urlparse
+    _u = urlparse(os.getenv('DATABASE_URL'))
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': (_u.path or '').lstrip('/') or 'donzo',
+        'USER': unquote(_u.username or ''),
+        'PASSWORD': unquote(_u.password or ''),
+        'HOST': _u.hostname or '',
+        'PORT': str(_u.port or 5432),
+        'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'require')},
+    }
+
 AUTH_USER_MODEL = 'users.User'
 
 AUTH_PASSWORD_VALIDATORS = [

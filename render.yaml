@@ -35,16 +35,9 @@ services:
         value: "require"
       - key: AUDIT_REPORT_HOUR
         value: "9"
-      # ── Neon (dashboard'da to'ldiriladi) ──
-      - key: DB_NAME
-        sync: false
-      - key: DB_USER
-        sync: false
-      - key: DB_PASSWORD
-        sync: false
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
+      # ── Neon: bitta ulanish satri (Neon dashboard → Connect →
+      #    postgresql://user:pass@host/dbname) ──
+      - key: DATABASE_URL
         sync: false
       # ── Maxfiylar (lokal .env bilan BIR XIL bo'lishi shart) ──
       - key: DJANGO_SECRET_KEY
