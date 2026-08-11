@@ -10,6 +10,7 @@ _archive/
 .env
 .env.local
 .env.*.local
+render-env-to-paste.txt
 
 # Lokal DB (PostgreSQL portable ma'lumotlari)
 backend/db.sqlite3
