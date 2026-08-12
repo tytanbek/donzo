@@ -237,6 +237,35 @@ export default function AdminCardsPage() {
         )}
       </div>
 
+      {/* ── FAVQULODDA: barcha kartalar limitda ── */}
+      {activeCard?.is_exhausted && (
+        <div className="rounded-2xl border border-red-500/50 bg-red-500/10 p-4 flex flex-wrap items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-xl text-red-400">
+            <FiAlertTriangle />
+          </div>
+          <div className="flex-1 min-w-[220px]">
+            <p className="text-red-300 font-bold text-sm">FAVQULODDA: barcha kartalar limitda!</p>
+            <p className="text-xs text-red-300/80 mt-0.5">
+              Tizim oxirgi kartada (***{activeCard.card_tail}) ishlashda davom etmoqda — to‘lovlar to‘xtamaydi, lekin darhol yangi karta qo‘shing yoki limitlarni oshiring. Staff guruhiga ogohlantirish yuborildi.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { resetForm(); setShowForm(true); }}
+              className="text-xs px-4 py-2 rounded-lg bg-red-500/20 text-red-300 font-semibold hover:bg-red-500/30 transition inline-flex items-center gap-1.5"
+            >
+              <FiPlus className="text-sm" /> YANGI KARTA QO‘SHISH
+            </button>
+            <button
+              onClick={() => handleReset(activeCard)}
+              className="text-xs px-4 py-2 rounded-lg bg-slate-700/40 text-slate-300 hover:bg-slate-700/60 transition inline-flex items-center gap-1.5"
+            >
+              <FiRefreshCw className="text-sm" /> Hisoblagichlarni tiklash
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Limits info strip */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4">
