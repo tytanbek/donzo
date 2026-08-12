@@ -165,7 +165,9 @@ export default function FragmentLogin() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authAPI.fragmentLogin(uname, telegramUsernameRef.current);
+      const tgUser = (window as any).Telegram?.WebApp?.initDataUnsafe?.user;
+      const tgId = tgUser?.id != null ? String(tgUser.id) : undefined;
+      const res = await authAPI.fragmentLogin(uname, telegramUsernameRef.current, tgId);
       finishLogin(res);
     } catch (e: any) {
       const detail = e?.response?.data?.detail;

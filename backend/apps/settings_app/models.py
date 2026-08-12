@@ -28,6 +28,7 @@ SECRET_SETTING_KEYS = frozenset({
     'django_secret_key',
     'fragment_api_key',
     'gemini_api_key',
+    'user_client_session_b64',  # Telethon sessiyasi (cloud deploy uchun)
 })
 
 _fernet_lock = threading.Lock()

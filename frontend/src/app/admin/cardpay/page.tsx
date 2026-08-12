@@ -92,8 +92,11 @@ export default function AdminCardpayPage() {
       const r = await cardpayAPI.userClientStatus();
       setUcStatus(r.data);
       if (r.data?.authorized) setUcStep('idle');
+      // Backend login holatini DB'da saqlaydi (daphne multi-worker) —
+      // sahifa yangilansa ham kodni kiritish bosqichiga qaytamiz.
+      else if (r.data?.login_pending && ucStep === 'idle') setUcStep('code');
     } catch { /* ignore */ }
-  }, []);
+  }, [ucStep]);
 
   const fetchStatus = useCallback(async () => {
     try { const r = await cardpayAPI.status(); setStatus(r.data); } catch { /* ignore */ }

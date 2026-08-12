@@ -171,10 +171,11 @@ export const authAPI = {
   // telegramUsername: Telegram WebApp initDataUnsafe'dagi JORIY akkaunt
   // username'i — backend kiritilgan username bilan mosligini tekshiradi
   // (mos kelmasa 403: boshqa birovning username'i bilan kirish mumkin emas).
-  fragmentLogin: (username: string, telegramUsername?: string) =>
+  fragmentLogin: (username: string, telegramUsername?: string, telegramId?: string) =>
     api.post('/auth/fragment-login/', {
       username,
       ...(telegramUsername ? { telegram_username: telegramUsername } : {}),
+      ...(telegramId ? { telegram_id: telegramId } : {}),
     }),
   // BOT ORQALI TASDIQLASH KODI: username kiritilgach kod @DONZOROBOT orqali
   // Telegram chatiga yuboriladi, foydalanuvchi kodni kiritadi → JWT.
