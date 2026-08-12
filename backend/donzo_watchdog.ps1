@@ -337,8 +337,14 @@ while ($true) {
                 if ($backendDead -ge 2) { Repair-Backend; $backendDead = 0 }
             }
         } else { $backendDead = 0 }
-        Start-BotSupervisor
-        Start-UserClientSupervisor
+        # CLOUD MODE: .freebuff\cloud_mode fayli mavjud bo'lsa bot va
+        # user_client CLOUD'da (Render) ishlaydi — lokalda boshlamaymiz.
+        # Aks holda ikkala tomonda getUpdates/polling konflikti bo'ladi.
+        $cloudMode = Test-Path (Join-Path $freebuff 'cloud_mode')
+        if (-not $cloudMode) {
+            Start-BotSupervisor
+            Start-UserClientSupervisor
+        }
         Start-Frontend
         Sync-TunnelUrl
     } catch {

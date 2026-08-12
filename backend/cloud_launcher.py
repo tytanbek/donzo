@@ -42,10 +42,22 @@ def _log(tag: str, msg: str):
 
 
 def _session_bootstrap():
-    """SESSION_B64 env'idan donzo_user.session ni tiklaydi."""
+    """Sessiyani tiklaydi: SESSION_B64 env yoki Neon DB'dagi
+    'user_client_session_b64' sozlamasidan (cloud deploy uchun)."""
     b64 = os.getenv('SESSION_B64', '')
     if not b64:
-        _log('SESSION', "SESSION_B64 yo'q — user_client sessiyasi env'dan olinmaydi")
+        try:
+            import django
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+            django.setup()
+            from apps.settings_app.models import Setting
+            b64 = Setting.get_setting('user_client_session_b64', '') or ''
+            _log('SESSION', "sessiya Neon DB'dan o'qildi")
+        except Exception as exc:
+            _log('SESSION', f"DB sessiya o'qilmadi: {type(exc).__name__}: {str(exc)[:120]}")
+            return
+    if not b64:
+        _log('SESSION', "sessiya topilmadi (env ham, DB ham bo'sh) — user_client ishlamaydi")
         return
     try:
         data = base64.b64decode(b64)
@@ -108,6 +120,10 @@ def _supervise(name, cmd):
             _log(name, f"chiqdi (rc=0) — {backoff}s keyin qayta ishga tushadi")
         else:
             _log(name, f"YIQILDI (rc={rc}) — {backoff}s keyin qayta ishga tushadi")
+        # rc=5 (user_client): sessiya bloklangan — qayta kirish kerak, tez-tez
+        # urinish ma'nosiz. 5 daqiqada bir marta urinamiz.
+        if rc == 5 and name.upper() == 'USERCLIENT':
+            backoff = 300
         _stop.wait(backoff)
         backoff = 5 if lived > 300 else min(backoff * 2, 60)
 
@@ -125,6 +141,39 @@ def _pinger():
         except Exception as exc:
             _log('PING', f"xato: {type(exc).__name__}: {str(exc)[:120]}")
         _stop.wait(PING_INTERVAL)
+
+
+def _direct_db_url():
+    """Neon pooler URL'ini direct URL'ga aylantiradi.
+
+    PgBouncer (pooler) migratsiya/DDL da osilib qoladi — direct ulanish
+    tez va ishonchli. Faqat migratsiya jarayoni uchun ishlatiladi.
+    """
+    url = os.getenv('DATABASE_URL', '')
+    if '-pooler' in url:
+        return url.replace('-pooler', '')
+    return url
+
+
+def _run_migrations():
+    """Migratsiyani fon thread'da bajaradi — daphne'ni bloklamaydi.
+
+    Schema allaqachon Neon'da bor; bu faqat yangi kod deploy'larida
+    qo'shimcha migratsiyalarni qo'llash uchun (non-blocking).
+    """
+    try:
+        env = dict(os.environ)
+        direct = _direct_db_url()
+        if direct:
+            env['DATABASE_URL'] = direct
+        _log('MIGRATE', 'migratsiya boshlanmoqda (direct ulanish)...')
+        subprocess.run(
+            [sys.executable, 'manage.py', 'migrate', '--noinput'],
+            cwd=BASE_DIR, env=env, timeout=300,
+        )
+        _log('MIGRATE', 'migratsiya tugadi')
+    except Exception as exc:
+        _log('MIGRATE', f'migratsiya xatosi: {type(exc).__name__}: {str(exc)[:120]}')
 
 
 def _daily_audit():
@@ -163,6 +212,7 @@ def main():
                for n, c in procs]
     threads.append(threading.Thread(target=_pinger, daemon=True))
     threads.append(threading.Thread(target=_daily_audit, daemon=True))
+    threads.append(threading.Thread(target=_run_migrations, daemon=True))
     for t in threads:
         t.start()
 
