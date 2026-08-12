@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiCreditCard, FiRefreshCw, FiZap, FiCheckCircle, FiAlertTriangle } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiCreditCard, FiRefreshCw, FiZap, FiCheckCircle, FiAlertTriangle, FiInfo } from 'react-icons/fi';
 import { cardpayAPI } from '@/lib/api';
 import { cardDigits, validateCardNumber, isCardReady } from '@/lib/card';
 import toast from 'react-hot-toast';
@@ -39,6 +39,7 @@ const emptyForm = {
   bank_name: '',
   max_amount: '',
   max_transfers: '',
+  order_index: '',
   enabled: true,
   is_active: false,
   auto_reset_daily: true,
@@ -82,6 +83,7 @@ export default function AdminCardsPage() {
       bank_name: card.bank_name,
       max_amount: card.max_amount,
       max_transfers: String(card.max_transfers),
+      order_index: String(card.order_index),
       enabled: card.enabled,
       is_active: card.is_active,
       auto_reset_daily: card.auto_reset_daily,
@@ -102,6 +104,7 @@ export default function AdminCardsPage() {
       bank_name: form.bank_name.trim(),
       max_amount: form.max_amount || 0,
       max_transfers: form.max_transfers || 0,
+      order_index: Number(form.order_index) || 0,
       enabled: form.enabled,
       is_active: form.is_active,
       auto_reset_daily: form.auto_reset_daily,
@@ -183,6 +186,29 @@ export default function AdminCardsPage() {
         </button>
       </div>
 
+      {/* ── Foydalanish ko‘rsatmasi ── */}
+      <div className="rounded-2xl border border-cyan-500/25 bg-gradient-to-br from-cyan-500/10 to-blue-600/10 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <FiInfo className="text-cyan-400" />
+          <h2 className="text-white font-bold text-sm">Karta limitlari — qanday ishlaydi</h2>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs text-slate-300 leading-relaxed">
+          <div className="space-y-2">
+            <p><b className="text-white">1. Limitlar.</b> Har kartaga <b className="text-cyan-300">maksimal summa</b> va <b className="text-cyan-300">maksimal o‘tkazmalar soni</b> belgilang (<b className="text-white">0 = cheksiz</b>). Bank xabari kelganda hisoblagichlar shu kartaga yoziladi.</p>
+            <p><b className="text-white">2. Avtomatik almashtirish.</b> Karta limitga yetganda tizim <b className="text-emerald-300">avtomatik</b> keyingi kartaga o‘tadi — mijozlar buni sezmaydi, to‘lov ma’lumotlari yangi kartaga yangilanadi.</p>
+            <p><b className="text-white">3. Navbat (order_index).</b> <b className="text-cyan-300">1</b> — birinchi ishlatiladi, <b className="text-cyan-300">2</b> — uning zaxirasi va h.k. Eng kichik raqamli karta avval faollashadi; limitga yetganda navbatdagi keyingisi o‘tadi. Bir xil raqam bo‘lsa — avval qo‘shilgan karta ustun.</p>
+          </div>
+          <div className="space-y-2">
+            <p><b className="text-white">4. Kunlik tiklash.</b> <b className="text-cyan-300">auto_reset_daily</b> yoqilgan kartada hisoblagichlar har kuni <b className="text-white">yarim tunda (00:00)</b> nolga qaytadi — limitlar kunlik doirada ishlaydi. O‘chirilgan bo‘lsa, limitlar qo‘lda “Reset” tugmasigacha to‘planadi.</p>
+            <p><b className="text-white">5. Karta aniqlash.</b> To‘lov qaysi kartaga kelgani bank xabaridagi <b className="text-white">💳 ***XXXX</b> oxirgi 4 raqam orqali aniqlanadi. Har bir karta raqami noyob bo‘lishi shart.</p>
+            <p><b className="text-white">6. Faollashtirish.</b> “Faollashtirish” tugmasi yoki formadagi <b className="text-white">“Darhol faollashtirish”</b> — faqat bitta karta faol bo‘lishi mumkin. Faol karta mijozlarga ko‘rsatiladi.</p>
+          </div>
+        </div>
+        <div className="mt-3 pt-3 border-t border-cyan-500/20 text-[11px] text-slate-400">
+          <b className="text-white">Tavsiya etilgan sozlash:</b> 1) asosiy kartani qo‘shing (order_index=1, limit belgilang) → 2) zaxira kartani qo‘shing (order_index=2) → 3) zaxiraga limit qo‘yib “Faollashtirish”ni bosing — asosiy limitga yetganda tizim avtomatik zaxiraga o‘tadi.
+        </div>
+      </div>
+
       {/* Active card banner */}
       <div className={`rounded-2xl border p-5 flex flex-wrap items-center gap-4 ${ready ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-red-500/40 bg-red-500/10'}`}>
         <div className="flex items-center gap-3">
@@ -262,7 +288,10 @@ export default function AdminCardsPage() {
                       <div className="text-xs text-slate-400">{card.card_holder || 'Egasiz'}{card.bank_name ? ` · ${card.bank_name}` : ''}</div>
                     </div>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 items-center">
+                    <span className="text-[10px] px-2 py-1 rounded-full bg-slate-700/40 text-slate-400 font-semibold" title="Navbat raqami — kichigi avval ishlatiladi">
+                      #{card.order_index} {card.order_index === 1 ? '· 1-navbat' : ''}
+                    </span>
                     {card.is_active ? (
                       <span className="text-[10px] px-2 py-1 rounded-full bg-cyan-500/20 text-cyan-400 font-semibold">FAOL</span>
                     ) : card.is_exhausted ? (
@@ -435,6 +464,18 @@ export default function AdminCardsPage() {
                     className="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 text-white text-sm outline-none focus:border-cyan-500/60"
                   />
                   <p className="text-[11px] text-slate-500 mt-0.5">0 bo‘lsa — cheksiz</p>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">Navbat (order_index)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.order_index}
+                    onChange={e => setForm({ ...form, order_index: e.target.value })}
+                    placeholder="1"
+                    className="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 text-white text-sm outline-none focus:border-cyan-500/60"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-0.5">1 — birinchi ishlatiladi, 2 — keyingi zaxira…</p>
                 </div>
               </div>
 
