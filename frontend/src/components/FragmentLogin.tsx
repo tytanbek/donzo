@@ -172,6 +172,14 @@ export default function FragmentLogin() {
       setError(detail || 'Kirish amalga oshmadi. Qayta urinib ko\'ring.');
       setLoading(false);
       setAutoMode(false);
+      // ── AVTOMATIK FALLBACK: yangi user (Fragment'da yo'q) → kod oqimiga
+      // o'tamiz. Username allaqachon JORIY Telegram akkauntga mos (auto oqim)
+      // — kod shu akkauntga yuboriladi, xavfsiz. Foydalanuvchi tugma
+      // bosmasdan kod ekranini ko'radi: "faqat login amalga oshmasagina
+      // username kiritish sahifasi ochilsin" qoidasi.
+      if (e?.response?.status === 401 && isInsideTelegram() && telegramUsernameRef.current) {
+        requestCode();
+      }
     }
   };
 
