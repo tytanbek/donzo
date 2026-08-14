@@ -86,7 +86,17 @@ export default function AdminUserClientPage() {
       } else {
         toast.error(r.data.detail || 'Kod noto\'g\'ri');
       }
-    } catch { toast.error('Kod tekshirilmadi'); } finally { setBusy(false); }
+    } catch (e: any) {
+      const d = e.response?.data || {};
+      if (d.needs_password) {
+        setStep('password');
+        toast('2FA — Telegram parolini kiriting');
+      } else if (d.detail) {
+        toast.error(d.detail);
+      } else {
+        toast.error('Kod tekshirilmadi — birozdan so\'ng qayta urinib ko\'ring');
+      }
+    } finally { setBusy(false); }
   };
 
   const doPassword = async () => {
@@ -233,7 +243,7 @@ export default function AdminUserClientPage() {
               )}
               {step === 'code' && (
                 <div>
-                  <p className={label}>2️⃣ Telegram'dan kelgan 6 xonali kod</p>
+                  <p className={label}>2️⃣ Telegram'dan kelgan 5–6 xonali kod (5 raqamli bo'lsa ham to'g'ri)</p>
                   <div className="flex gap-2">
                     <input className={input} placeholder="000000" value={code}
                       onChange={(e) => setCode(e.target.value)} />

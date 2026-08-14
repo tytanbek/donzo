@@ -605,7 +605,7 @@ export default function AdminCardpayPage() {
                     {ucStep === 'code' && (
                       <div>
                         <label className="text-xs text-[#94A3B8] block mb-1.5">
-                          2️⃣ Telegram‘dan kelgan 6 xonali kodni kiriting
+                          2️⃣ Telegram‘dan kelgan 5–6 xonali kodni kiriting (5 raqamli bo‘lsa ham to‘g‘ri)
                         </label>
                         <div className="flex gap-2">
                           <input

@@ -9,7 +9,7 @@ const api = axios.create({
   },
   // Public tunnels (trycloudflare) can take 20-60s to route the first request
   // (cold routing) — use a generous timeout so the first attempt usually succeeds.
-  timeout: 45000,
+  timeout: 90000,
 });
 
 // ── Read-only GET cache (in-memory) ──
