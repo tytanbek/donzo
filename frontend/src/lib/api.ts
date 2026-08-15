@@ -2,6 +2,20 @@ import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
+// Ishonchli zaxira backend — agar env'da pishirilgan URL o'lik bo'lsa (masalan
+// Vercel production hali eski trycloudflare tunnelga ishora qilsa), barcha
+// so'rovlar avtomatik shu Render manziliga o'tadi va ishlagan base
+// localStorage'da saqlanadi (keyingi ochilishlar darhol to'g'ri joyga boradi).
+const FALLBACK_BASE = 'https://donzo-backend.onrender.com/api/v1';
+
+function effectiveBase(): string {
+  if (typeof window !== 'undefined') {
+    const cached = localStorage.getItem('api_base');
+    if (cached === API_BASE || cached === FALLBACK_BASE) return cached;
+  }
+  return API_BASE;
+}
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -41,6 +55,8 @@ api.interceptors.request.use((config) => {
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Har so'rovda joriy (ishlayotgan) base URL ishlatiladi.
+    config.baseURL = effectiveBase();
   }
   const method = String(config.method || '').toLowerCase();
   if (method === 'get' && isCacheable(config.url)) {
@@ -112,6 +128,28 @@ api.interceptors.response.use(
 
     const originalRequest = error.config as any;
 
+    // ── BASE-URL FALLBACK ──
+    // Vercel production'da NEXT_PUBLIC_API_URL eski o'lik tunnelga pishirilgan
+    // bo'lishi mumkin (trycloudflare). Asosiy URL tarmoq xatosi (no response /
+    // timeout) berib, hali fallback sinab ko'rilmagan bo'lsa — xuddi shu so'rovni
+    // Render manziliga qayta yuboramiz va ishlaganini localStorage'da saqlaymiz.
+    // Keyingi barcha so'rovlar to'g'ridan-to'g'ri ishlayotgan base'ga boradi.
+    if (
+      originalRequest &&
+      shouldRetry(error) &&
+      originalRequest.baseURL !== FALLBACK_BASE &&
+      !originalRequest._fallbackTried
+    ) {
+      originalRequest._fallbackTried = true;
+      originalRequest.baseURL = FALLBACK_BASE;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('api_base', FALLBACK_BASE);
+        } catch (e) { /* localStorage o'chirilgan bo'lishi mumkin */ }
+      }
+      return api(originalRequest);
+    }
+
     // Transient retry with a real counter (up to MAX_RETRIES), exponential-ish backoff
     const retryCount = originalRequest?._retryCount || 0;
     if (
@@ -139,7 +177,7 @@ api.interceptors.response.use(
       try {
         const refresh = localStorage.getItem('refresh_token');
         if (refresh) {
-          const res = await axios.post(`${API_BASE}/auth/token/refresh/`, { refresh });
+          const res = await axios.post(`${effectiveBase()}/auth/token/refresh/`, { refresh });
           localStorage.setItem('access_token', res.data.access);
           // JWT rotation: backend blacklists the old refresh token and returns
           // a NEW one — it MUST be saved or the user gets logged out next refresh.
