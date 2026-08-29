@@ -338,6 +338,7 @@ export const adminAPI = {
     writeEnv: () => api.post('/admin/settings/write-env/', {}),
     fragmentStatus: (params?: any) => api.get('/admin/fragment-status/', { params }),
     fragmentSync: () => api.post('/admin/fragment-sync/', {}),
+    marketingStats: () => api.get('/admin/marketing-stats/'),
 };
 
 // Telegram Web App sessions (admin — recent Web App logins)

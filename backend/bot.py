@@ -20,8 +20,10 @@ SynchronousOnlyOperation.
 """
 
 import asyncio
+import json
 import logging
 import os
+import random
 import re
 import sys
 import threading
@@ -37,7 +39,10 @@ django.setup()
 from asgiref.sync import sync_to_async
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.error import InvalidToken
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes,
+    MessageHandler, ChatMemberHandler, filters,
+)
 
 from apps.settings_app.models import Setting
 from apps.users.models import User
@@ -145,6 +150,53 @@ def _heartbeat_loop():
     while True:
         time.sleep(HEARTBEAT_INTERVAL)
         heartbeat()
+        # Polling lock'ni yangilab turamiz — jonli instansiya lock'ni doim
+        # yangi tutadi; o'lgan instansiyaning lock'i eskiradi (TTL).
+        try:
+            from apps.settings_app.models import Setting
+            Setting.set_setting('bot_polling_lock', str(time.time()))
+        except Exception:
+            pass
+
+
+_POLLING_LOCK_TTL = 60  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi
+
+
+def _acquire_polling_lock():
+    """Startup lock — deploy paytida ikki bot instansiyasi bir vaqtda polling
+    qilib 409 (conflict) bermasligi uchun.
+
+    Render yangi deploy'ni ishga tushirganda eski kontener hali bir necha
+    soniya yashaydi — ikkalasi ham getUpdates chaqirsa Telegram 409 beradi
+    (xatolar 'Bot holati' panelida yig'iladi). Qoida:
+      • Boshqa instansiya lock'ni YANGI tutsa (< TTL) — polling boshlashni
+        kutamiz (15s qadam bilan, maks ~2.5 daqiqa).
+      • Lock eski / yo'q bo'lsa — o'zimiz olamiz va davom etamiz.
+    Lock'ni heartbeat loopi har 30s yangilaydi (yuqoriga qarang).
+    """
+    from apps.settings_app.models import Setting
+    # Eski instansiya lock'ni heartbeat bilan har 30s yangilaydi — shuning
+    # uchun yangi instansiya eski o'lguncha (Render uni ~1-2 daqiqada
+    # o'ldiradi) kutishi kerak. 15s qadam × 40 urinish = 10 daqiqa sabr.
+    # 10 daqiqadan keyin ham lock yangi bo'lsa — baribir boshlaymiz
+    # (hech qachon abadiy osilib qolmaydi).
+    for attempt in range(40):
+        try:
+            val = Setting.get_setting('bot_polling_lock', None)
+        except Exception:
+            val = None
+        now = time.time()
+        age = (now - float(val)) if val else None
+        if val is None or age is None or age > _POLLING_LOCK_TTL:
+            try:
+                Setting.set_setting('bot_polling_lock', str(now))
+            except Exception:
+                pass
+            print(f"[BOT] Polling lock olindi (attempt {attempt})")
+            return
+        print(f"[BOT] Boshqa instansiya polling qilmoqda (lock {int(age)}s) — 15s kutaman...")
+        time.sleep(15)
+    print("[BOT] Lock kutish tugadi — polling boshlanmoqda (PTB 409 ni o'zi hal qiladi)")
 
 
 def _price_sync_loop():
@@ -167,6 +219,237 @@ def _price_sync_loop():
             traceback.print_exc()
 
         time.sleep(PRICE_SYNC_CHECK_INTERVAL)
+
+
+def _send_proactive_message():
+    """Tasodifiy staff a'zosiga DONZO o'z-o'zidan jonli xabar yuboradi.
+
+    DONZO guruhda "yashaydi": vaqti-vaqti bilan staff a'zolarini belgilab,
+    hazil / muloyim tanqid / ustidan kulish bilan xabar yozadi — xuddi o'z
+    hayoti bor odamdek. Tizim holati/raqamlar xabarga ARALASHMAYDI (persona
+    taqiqlaydi). Hech qachon exception tashlamaydi — bot buzilmaydi.
+    """
+    try:
+        import json
+        import random
+        import urllib.request
+        from apps.settings_app.models import Setting
+        from apps.users.models import User
+
+        chat_id = Setting.get_setting('payment_report_chat_id', '') or ''
+        token = Setting.get_setting('telegram_bot_token', '') or ''
+        if not chat_id or not token:
+            return
+
+        staff = list(User.objects.filter(role__in=STAFF_ROLES, telegram_id__isnull=False)
+                     .exclude(telegram_id=''))
+        if not staff:
+            return
+
+        # MAQSADLI TARGET: staff_ai_proactive_target sozlansa (masalan 'mira'
+        # yoki 'akmalkhon007,ant1') — loop doim SHU ODAMLARGA yozadi va ularni
+        # kinoya bilan masxara qiladi. Vergul bilan bir nechta target beriladi,
+        # har safar ulardan biri tasodifiy tanlanadi.
+        mock = False
+        try:
+            fixed_targets = [x.strip().lstrip('@').lower() for x in
+                             (Setting.get_setting('staff_ai_proactive_target', '') or '').split(',')]
+            fixed_targets = [x for x in fixed_targets if x]
+        except Exception:
+            fixed_targets = []
+        if fixed_targets:
+            matches = [u for u in staff
+                       if (u.username or '').lower() in fixed_targets
+                       or (getattr(u, 'telegram_username', '') or '').lower() in fixed_targets]
+            if not matches:
+                return  # target(lar) topilmasa — xabar yubormaymiz
+            target = random.choice(matches)
+            mock = True
+        else:
+            # Oxirgi 2 qabul qiluvchini takrorlamaymiz (zeriktirmaslik uchun)
+            try:
+                last = (Setting.get_setting('staff_ai_proactive_last', '') or '').split(',')
+                last = [x for x in last if x]
+            except Exception:
+                last = []
+            candidates = [u for u in staff if str(u.id) not in last]
+            if not candidates:
+                candidates = staff
+            target = random.choice(candidates)
+
+        from apps.security import staff_ai
+        res = staff_ai.proactive_message(target.username, mock=mock)
+        if not res.get('ok') or not res.get('answer'):
+            return
+
+        mention = (f"@{target.telegram_username}" if getattr(target, 'telegram_username', None)
+                   else target.username)
+        text = f"{mention}\n\n{res['answer']}"
+
+        payload = {'chat_id': chat_id, 'text': text, 'disable_web_page_preview': True}
+        req = urllib.request.Request(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            ok = bool(json.loads(resp.read().decode('utf-8')).get('ok'))
+        if ok:
+            Setting.set_setting('staff_ai_proactive_last', ','.join((last + [str(target.id)])[-2:]))
+            print(f"[AI] Proaktiv xabar yuborildi: @{target.username}", flush=True)
+    except Exception as exc:
+        print(f"[AI] Proaktiv xabar xatosi: {type(exc).__name__}", flush=True)
+
+
+def _tg_api(token: str, method: str, payload: dict):
+    """Telegram Bot API'ga POST — parsed json dict yoki None qaytaradi."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f'https://api.telegram.org/bot{token}/{method}',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return None
+
+
+def _tashkent_now():
+    """Hozirgi vaqt Asia/Tashkent vaqt mintaqasida (testlarda osongina almashtiriladi)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Asia/Tashkent'))
+
+
+def _send_daily_marketing():
+    """Kuniga bir marta (ertalab) marketing guruhlariga suratli reklama yuboradi.
+
+    Vaqt: marketing_daily_time (HH:MM, Asia/Tashkent) — default 09:00.
+    Surat: marketing_daily_image (URL) → bo'lmasa faol Banner image_url →
+    bo'lmasa faqat matnli xabar.
+    Guruhlar: MarketingGroupStat'da ro'yxatdan o'tgan (bot qo'shilgan) guruhlar.
+    Operatsion chatlar (hisobot/monitor) o'tkazib yuboriladi.
+    Kuniga bir marta: marketing_daily_last = sana markeri.
+    Hech qachon exception tashlamaydi — bot buzilmaydi.
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupStat, Setting
+
+        if not (Setting.get_setting('marketing_daily_enabled', 'false') or 'false').lower() == 'true':
+            return
+        token = Setting.get_setting('telegram_bot_token', '') or ''
+        if not token:
+            return
+        # Vaqt: Asia/Tashkent (UTC+5) — ertalabgi reklama
+        try:
+            target = (Setting.get_setting('marketing_daily_time', '09:00') or '09:00').strip()
+            hh, mm = target.split(':')
+            target_min = int(hh) * 60 + int(mm)
+        except Exception:
+            target_min = 9 * 60
+        now = _tashkent_now()
+        now_min = now.hour * 60 + now.minute
+        if now_min < target_min:
+            return
+        # Kunlik marker — kuniga bir marta yuboriladi
+        last = Setting.get_setting('marketing_daily_last', '') or ''
+        today = now.strftime('%Y-%m-%d')
+        if last == today:
+            return
+
+        # Surat manbai: sozlama → faol Banner (admin panelda yuklangan)
+        image = (Setting.get_setting('marketing_daily_image', '') or '').strip()
+        if not image:
+            try:
+                from apps.banners.models import Banner
+                b = Banner.objects.filter(is_active=True).exclude(image_url='').first()
+                if b:
+                    image = b.image_url
+            except Exception:
+                image = ''
+        try:
+            bot_username = (Setting.get_setting('telegram_bot_username', 'DONZOROBOT') or 'DONZOROBOT').strip().lstrip('@')
+        except Exception:
+            bot_username = 'DONZOROBOT'
+        caption = "\n".join([
+            "🌅 Xayrli tong, guruh!",
+            "Bugun ham DONZO'da: eng arzon narxlar, 1 daqiqada top-up.",
+            "🎮 PUBG · Free Fire · Mobile Legends · Telegram Premium · 100+ xizmat",
+            f"🚀 Ochish: @{bot_username}",
+        ])
+
+        # Guruhlar: bot marketing qilgan barcha guruhlar (operatsionlardan tashqari)
+        skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+                str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
+        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
+        sent = 0
+        for g in groups:
+            cid = str(g['chat_id'])
+            if not cid or cid in skip:
+                continue
+            try:
+                payload = {'chat_id': cid, 'caption': caption,
+                           'disable_web_page_preview': True}
+                ok = False
+                if image:
+                    payload['photo'] = image
+                    res = _tg_api(token, 'sendPhoto', payload)
+                    ok = bool(res and res.get('ok'))
+                if not ok:
+                    payload.pop('photo', None)
+                    payload['text'] = payload.pop('caption')
+                    res = _tg_api(token, 'sendMessage', payload)
+                    ok = bool(res and res.get('ok'))
+                if ok:
+                    MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+                    sent += 1
+            except Exception:
+                continue
+        Setting.set_setting('marketing_daily_last', today)
+        print(f"[MARKETING] Kunlik reklama: {sent} guruhga yuborildi", flush=True)
+    except Exception as exc:
+        print(f"[MARKETING] Kunlik reklama xatosi: {type(exc).__name__}", flush=True)
+
+
+def _daily_marketing_loop():
+    """Har daqiqada tekshiradi: ertalab (marketing_daily_time) guruhlarga reklama.
+
+    Bot o'sha paytda o'chiq bo'lsa — keyingi ishga tushishda vaqt o'tgan bo'lsa
+    ham yuboriladi (marker: kuniga bir marta). Xato hech narsani buzmaydi.
+    """
+    time.sleep(120)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
+    while True:
+        try:
+            _send_daily_marketing()
+        except Exception:
+            pass
+        time.sleep(60)
+
+
+def _proactive_loop():
+    """DONZO proaktiv suhbat loopi — staff guruhida o'zi "yashab" turadi.
+
+    Sozlamalar:
+      staff_ai_proactive_enabled   — 'true'/'false' (default false — staff guruhida
+                                     bot o'z-o'zidan yozmaydi, faqat unga yozilganda javob beradi)
+      staff_ai_proactive_interval_min — daqiqada interval (default 45)
+    Xato hech narsani buzmaydi; loop abadiy ishlaydi.
+    """
+    time.sleep(90)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
+    while True:
+        interval = 45 * 60
+        try:
+            from apps.settings_app.models import Setting
+            enabled = (Setting.get_setting('staff_ai_proactive_enabled', 'false') or 'false').lower() == 'true'
+            if enabled:
+                _send_proactive_message()
+            minutes = float(Setting.get_setting('staff_ai_proactive_interval_min', '45') or 45)
+            interval = max(5, int(minutes * 60))
+        except Exception:
+            interval = 45 * 60
+        time.sleep(interval)
 
 
 def _get_bot_config():
@@ -544,7 +827,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         if user.role in ('super_admin', 'admin'):
             lines += [
-                "/togrila — AVTO-TUZATISH (ishlamayotgan komponentlarni tiklaydi)",
+                "/togrila [muammo] — AVTO-TUZATISH (+ AI kod tuzatish, backup bilan)",
+                "/qaytar — oxirgi AI kod tuzatishini asl holatiga qaytaradi",
                 "/restart backend|tunnel|bot|userclient|watchdog — komponent restart",
             ]
     lines += ["", "🚀 Eng asosiy: <b>Donat qilishni boshlash</b> tugmasi orqali web app'ga o'ting!"]
@@ -560,9 +844,7 @@ async def _require_staff(update: Update) -> bool:
     tg_id = str(update.effective_user.id)
     user = await db_user_by_tg(tg_id)
     if user is None or user.role not in STAFF_ROLES:
-        await update.effective_message.reply_html(
-            "❌ Bu buyruq faqat xodimlar uchun."
-        )
+        await update.effective_message.reply_html(_deny_with_sass())
         return False
     return True
 
@@ -572,11 +854,24 @@ async def _require_admin(update: Update) -> bool:
     tg_id = str(update.effective_user.id)
     user = await db_user_by_tg(tg_id)
     if user is None or user.role not in ('super_admin', 'admin'):
-        await update.effective_message.reply_html(
-            "❌ Bu buyruq faqat adminlar uchun."
-        )
+        await update.effective_message.reply_html(_deny_with_sass())
         return False
     return True
+
+
+def _deny_with_sass() -> str:
+    """Ruxsatsiz buyruq uchun kinoyali rad javobi (JARVIS uslubi, haqoratsiz)."""
+    import random
+    variants = [
+        "😏 Qiziqarli urinish, lekin yo'q. Bu tugma faqat egam uchun — sizda esa faqat qiziquvchanlik ko'ryapman.",
+        "🙃 Kechirasiz, bu buyruq ruxsat talab qiladi. Sizning ismingiz ruxsat ro'yxatida yo'q, afsuski.",
+        "😌 Harakat uchun rahmat, lekin bu yerda sizning vakolatingiz yetmaydi. Egamga murojaat qiling — u hal qiladi.",
+        "🧐 Bu tugmani bosishga urinish — jasorat, lekin oqibat yo'q. Bu kalitlar faqat egamning qo'lida.",
+        "😏 Men sizni yaxshi ko'raman, lekin bu buyruqni sizga bermaganman. Egam bilan maslahatlashib ko'ring.",
+        "🙂 Hmm, yo'q. Bu darajadagi tugmalar faqat egamga ochiq — boshqalar uchun eshik qulfli.",
+        "😄 Urinish qadrlanadi, natija esa — rad. Bu buyruq faqat adminlar uchun, siz esa hozircha tomoshabinsiz.",
+    ]
+    return random.choice(variants)
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -659,20 +954,64 @@ async def togrila_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /togrila — AVTO-TUZATISH: tizim holatini tekshiradi va ishlamayotgan
     komponentlarni (backend, tunnel, bot, user client) avtomatik tiklaydi.
+    Qo'shimcha: muammo tavsifi berilsa AI kod tuzatishni ham qiladi
+    (backup saqlanadi — yoqmasa /qaytar).
     Faqat admin/super_admin uchun.
     """
     bump(updates=1, messages=1, command='togrila')
     if not await _require_admin(update):
         return
+    args = (context.args or [])
+    problem = ' '.join(args).strip() if args else ''
     await update.effective_message.reply_html(
         "🔧 <b>Avto-tuzatish boshlandi...</b>\n\n"
         "Tizim holati tekshirilmoqda va ishlamayotgan komponentlar "
         "qayta ishga tushirilmoqda. Bu 20-60 soniya oladi."
     )
-    from apps.security.auto_fix import run_auto_fix, format_fix_report
+    from apps.security.auto_fix import run_auto_fix, format_fix_report, ai_code_fix, format_patch_report
     username = update.effective_user.username or str(update.effective_user.id)
     result = await sync_to_async(run_auto_fix)(username)
     await update.effective_message.reply_html(format_fix_report(result))
+
+    # Muammo tavsifi berilgan bo'lsa — AI kod tuzatish (backup bilan)
+    if problem:
+        await update.effective_message.reply_html(
+            f"🧠 <b>AI tahlil + kod tuzatish</b>\n\n"
+            f"Muammo: <i>{staff_ai.escape_html(problem[:300])}</i>\n"
+            "Gemini tahlil qilmoqda... (20-45 soniya)"
+        )
+        try:
+            from apps.security import system_health
+            health_text = ''
+            try:
+                health_text = await sync_to_async(system_health.format_health_report)()
+            except Exception:
+                health_text = ''
+            fix = await sync_to_async(ai_code_fix)(problem, username, health_text)
+            report = format_patch_report(fix)
+            if fix.get('analysis') and fix.get('applied'):
+                report = f"{report}\n\n🔍 AI tahlil:\n{staff_ai.escape_html(fix['analysis'][:300])}"
+            elif fix.get('note') == 'no_change':
+                report = f"🧠 {staff_ai.escape_html(fix.get('analysis', 'AI: kod o\'zgarishi shart emas.'))}"
+            await update.effective_message.reply_html(report)
+        except Exception as exc:
+            await update.effective_message.reply_html(
+                f"⚠️ AI kod tuzatishda xato: {type(exc).__name__}: {str(exc)[:150]}"
+            )
+
+
+async def qaytar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /qaytar — oxirgi AI kod tuzatishini asl holatiga qaytaradi (backup'dan).
+    Faqat admin/super_admin uchun.
+    """
+    bump(updates=1, messages=1, command='qaytar')
+    if not await _require_admin(update):
+        return
+    from apps.security.auto_fix import revert_last_fix, format_patch_report
+    username = update.effective_user.username or str(update.effective_user.id)
+    result = await sync_to_async(revert_last_fix)(username)
+    await update.effective_message.reply_html(format_patch_report(result))
 
 
 async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -769,7 +1108,7 @@ async def _security_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tg_id = str(update.effective_user.id)
     user = await db_user_by_tg(tg_id)
     if user is None or user.role not in ('super_admin', 'admin'):
-        await query.answer('❌ Bu harakat faqat adminlar uchun')
+        await query.answer(_deny_with_sass())
         return
 
     from apps.security import services as sec_services
@@ -840,7 +1179,7 @@ async def _suspicious_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Every staff member RECEIVES the alert, but only admins may MOVE MONEY
     # (the admin-panel approve endpoint is admin-only — keep parity).
     if user is None or user.role not in ('super_admin', 'admin'):
-        await query.answer('❌ Bu harakat faqat adminlar uchun')
+        await query.answer(_deny_with_sass())
         return
 
     from apps.cardpay import services as cardpay_services
@@ -862,6 +1201,634 @@ async def _suspicious_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(
             (query.message.text or '') + f"\n\n✅ <b>{label}</b> — {user.username}",
             parse_mode='HTML')
+    except Exception:
+        pass
+
+
+# ── MARKETING REJIMI (boshqa guruhlar) ────────────────────────────────────
+# DONZO bot boshqa guruhlarga qo'shilsa: hamma xabarga emas — faqat eng
+# qiziqlariga javob beradi, o'zini jonli maskotdek tutadi va platformani
+# reklama qiladi. Angry rejim ham saqlanadi (staff_ai marketing_reply).
+_MARKETING_KEYWORDS = (
+    'oyin', 'o\'yin', 'game', 'pubg', 'free fire', 'ff ', 'mobile legends', 'ml ',
+    'genshin', 'cod ', 'clash', 'valorant', 'donat', 'topup', 'top up', 'top-up',
+    'diamant', 'diamond', ' uc', 'premium', 'telegram premium', 'pul', 'karta',
+    'card', 'to\'lov', 'balans', 'balance', 'narx', 'price', 'chegirma', 'aktsiya',
+    'aksiya', 'sotib olish', 'sotish', 'skam', 'scam', 'firibgar', 'xavfsiz',
+    'ishonch', 'star', 'stars', 'jonli', 'kontakt', 'aloqa',
+)
+
+# Guruh bo'yicha so'nggi javob vaqtlari (rolling 1 soat) — spam bo'lmasligi uchun
+_MARKETING_RECENT: dict = {}
+
+# Guruh suhbat trackeri — qaysi mavzuda suhbat bor, nechta xabar kelgan,
+# oxirgi faollik vaqti, nechta javob berildi. chat_id -> {messages, last_active, reply_count, topic}
+_GROUP_CONVERSATIONS: dict = {}
+
+def _record_group_member(chat_id: str, username: str, first_name: str = '',
+                         user_id=None):
+    """Marketing guruhida ko'rilgan a'zoni DB'da eslab qoladi (username bilan).
+
+    Bot qayta ishga tushsa ham a'zolar saqlanadi — jadval: marketing_group_members.
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupMember
+        MarketingGroupMember.record_member(chat_id, username, first_name, user_id)
+    except Exception:
+        pass
+
+
+def _send_group_roast():
+    """Marketing guruhidagi a'zolarni username orqali kinoyali masxara bilan
+    murojaat qiladi — "guruhdagi hammaga gapirib chiqadi".
+
+    A'zolar DB'dan o'qiladi (marketing_group_members) — bot restart bo'lsa ham
+    kimlarni bilganini eslab qoladi. Agar DB bo'sh bo'lsa — Telegram API orqali
+    a'zolarni olib, DB'ga yozadi. Har safar kamroq masxara qilingan a'zoni
+    tanlaydi (30 daqiqada bir marta odamga). Staff/hisobot/monitor guruhlariga
+    hech qachon yozmaydi. Xato hech narsani buzmaydi.
+    """
+    try:
+        from django.utils import timezone
+        from datetime import timedelta
+        from apps.settings_app.models import MarketingGroupMember, MarketingGroupStat, Setting
+        if not (Setting.get_setting('marketing_roast_enabled', 'false') or 'false').lower() == 'true':
+            return
+        token = Setting.get_setting('telegram_bot_token', '') or ''
+        if not token:
+            return
+        skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+                str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
+        from apps.security import staff_ai
+
+        now = timezone.now()
+        cutoff = now - timedelta(minutes=30)
+        # 7 kun harakatsiz a'zolarni tozalash (vaqti-vaqti bilan)
+        MarketingGroupMember.prune(days=7)
+
+        # Agar DB'da a'zolar yo'q bo'lsa — Telegram API orqali adminlarni olib kelamiz
+        db_count = MarketingGroupMember.objects.count()
+        if db_count == 0:
+            _fetch_and_record_group_members(token, skip)
+
+        candidates = []
+        # Bot o'zini, egasini va hurmatli foydalanuvchilarni chiqarib tashlaymiz
+        bot_username = (Setting.get_setting('telegram_bot_username', '') or '').lower()
+        owner_id = (Setting.get_setting('super_admin_telegram_id', '') or '').strip()
+        respected_raw = (Setting.get_setting('staff_ai_respected_users', '') or '').lower()
+        respected = {u.strip().lstrip('@') for u in respected_raw.split(',') if u.strip()}
+        members = (MarketingGroupMember.objects
+                   .filter(last_seen_at__gte=now - timedelta(days=7))
+                   .values('chat_id', 'username', 'last_seen_at', 'last_roast_at', 'user_id')
+                   .order_by('chat_id'))
+        per_chat = {}
+        for m in members:
+            cid = str(m['chat_id'])
+            if cid in skip:
+                continue
+            per_chat.setdefault(cid, []).append(m)
+
+        for cid, rows in per_chat.items():
+            best, best_score = None, None
+            for r in rows:
+                uname = r['username']
+                # Bot, egasi va hurmatli foydalanuvchilarni o'tkazib yuboramiz
+                if uname == bot_username:
+                    continue
+                if str(r.get('user_id') or '') == owner_id:
+                    continue
+                if uname in respected:
+                    continue
+                last_roast = r.get('last_roast_at')
+                if last_roast and last_roast > cutoff:  # 30 daqiqada bir marta
+                    continue
+                score = (r['last_seen_at'] - (last_roast or r['last_seen_at'])).total_seconds()
+                if best_score is None or score > best_score:
+                    best, best_score = uname, score
+            if best:
+                candidates.append((cid, best))
+        if not candidates:
+            return
+        cid, username = random.choice(candidates)
+
+        res = staff_ai.proactive_message(username, mock=True)
+        answer = (res.get('answer') or '').strip()
+        if not answer:
+            return
+        text = f"@{username}\n\n{answer}"
+        payload = {'chat_id': cid, 'text': text, 'disable_web_page_preview': True}
+        res2 = _tg_api(token, 'sendMessage', payload)
+        if not (res2 and res2.get('ok')):
+            return
+        MarketingGroupMember.mark_roasted(cid, username, when=now)
+        try:
+            title = (MarketingGroupStat.objects.filter(chat_id=cid)
+                     .values_list('chat_title', flat=True).first()) or ''
+            MarketingGroupStat.record(cid, title, 'reply')
+        except Exception:
+            pass
+        print(f"[MARKETING] Masxara: @{username} ({cid})", flush=True)
+    except Exception as exc:
+        print(f"[MARKETING] Masxara xatosi: {type(exc).__name__}", flush=True)
+
+
+def _fetch_and_record_group_members(token: str, skip: set):
+    """Telegram API orqali guruhlardagi adminlarni olib, DB'ga yozadi.
+
+    Faqat getChatAdministrators ishlatiladi — u har doim mavjud.
+    Bot admin bo'lgan guruhlardagi barcha a'zolarni record qiladi.
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupStat, MarketingGroupMember
+        from django.utils import timezone
+        groups = MarketingGroupStat.objects.values_list('chat_id', flat=True)
+        now = timezone.now()
+        for chat_id in groups:
+            cid = str(chat_id)
+            if cid in skip:
+                continue
+            # getChatAdministrators — faqat adminlar (bot ham admin bo'lishi kerak)
+            res = _tg_api(token, 'getChatAdministrators', {'chat_id': cid})
+            if res and res.get('ok'):
+                for member in res.get('result', []):
+                    user = member.get('user', {})
+                    uname = (user.get('username') or '').strip().lower()
+                    if not uname:
+                        continue
+                    MarketingGroupMember.record_member(
+                        chat_id=cid,
+                        username=uname,
+                        first_name=user.get('first_name', ''),
+                        user_id=user.get('id'),
+                        seen_at=now,
+                    )
+                print(f"[MARKETING] {cid}: {len(res.get('result', []))} admin a'zo yozildi", flush=True)
+    except Exception as exc:
+        print(f"[MARKETING] A'zolarni olish xatosi: {type(exc).__name__}", flush=True)
+
+
+def _group_roast_loop():
+    """Marketing guruhlarida a'zolarni username bilan kinoyali murojaat qilish.
+
+    Sozlamalar:
+      marketing_roast_enabled      — 'true'/'false' (default false)
+      marketing_roast_interval_min — murojaatlar orasidagi interval (daqiqa)
+    Xato hech narsani buzmaydi; loop abadiy ishlaydi.
+    """
+    time.sleep(180)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
+    while True:
+        interval = 20 * 60
+        try:
+            from apps.settings_app.models import Setting
+            enabled = (Setting.get_setting('marketing_roast_enabled', 'false') or 'false').lower() == 'true'
+            if enabled:
+                _send_group_roast()
+            minutes = float(Setting.get_setting('marketing_roast_interval_min', '20') or 20)
+            interval = max(3, int(minutes * 60))
+        except Exception:
+            interval = 20 * 60
+        time.sleep(interval)
+
+
+def _marketing_score(text: str) -> int:
+    """Xabarning DONZO uchun qiziqarlilik balli (0..N)."""
+    try:
+        low = (text or '').lower()
+        score = sum(1 for w in _MARKETING_KEYWORDS if w in low)
+        if '?' in text or '؟' in text:
+            score += 1
+        if len(text) > 160:
+            score += 1
+        return score
+    except Exception:
+        return 0
+
+
+def _marketing_rate_ok(chat_id: str, max_per_hour: int) -> bool:
+    """Har guruh uchun soatiga ko'pi bilan max_per_hour ta javob."""
+    try:
+        now = time.time()
+        dq = _MARKETING_RECENT.setdefault(chat_id, [])
+        dq = [t for t in dq if now - t < 3600]
+        _MARKETING_RECENT[chat_id] = dq
+        if len(dq) >= max(1, max_per_hour):
+            return False
+        dq.append(now)
+        return True
+    except Exception:
+        return True
+
+
+def _marketing_ad() -> str:
+    """DONZO'ni tabiiy eslatish — OCHIQ reklama emas, xuddi suhbat orasida
+    tasodifan tashlangan jumladek. Banner, ro'yxat, emoji-bo'ron YO'Q —
+    odam shunday deyishi mumkin bo'lgan oddiy gap."""
+    ads = [
+        "o'sha yerda olasan-da, donzoda — nimaga boshqa joyda qiynalasan",
+        "donzo degan joy bor, shu yerda yozasan-da, tayyor",
+        "men o'sha yerdan olaman, donzo deydilar — boshqa gap yo'q",
+        "donzoda olasan, xolos. boshqa savol tugatildi",
+        "qayerdan? donzoda-da, nimaga o'ylab o'tiribsan",
+        "donzodan ol, tez bo'ladi — o'zim ishlataman, bilaman",
+        "hali ham izlayapsanmi? donzo bor, yozasan-da, bo'ldi",
+        "men o'shani donzodan olaman — arzonroq ham chiqadi",
+    ]
+    return random.choice(ads)
+
+
+def _track_group_conversation(chat_id: str, text: str):
+    """Guruhdagi suhbatni kuzatadi: mavzu, faollik, xabar soni, bot javob soni.
+
+    In-memory (bot ishlaguncha yetarli — restartda suhbat ham tugaydi).
+    """
+    try:
+        now = time.time()
+        conv = _GROUP_CONVERSATIONS.setdefault(chat_id, {
+            'messages': [],       # (ts, text) — oxirgi 30 daqiqa
+            'last_active': now,
+            'reply_count': 0,     # bot shu suhbatda necha marta javob berdi
+            'last_reply': 0,
+        })
+        cutoff = now - 1800
+        conv['messages'] = [(ts, t) for ts, t in conv['messages'] if ts >= cutoff]
+        conv['messages'].append((now, (text or '')[:500]))
+        if len(conv['messages']) > 20:
+            conv['messages'] = conv['messages'][-20:]
+        conv['last_active'] = now
+        # 30 daqiqa suhbat bo'lmagan bo'lsa — yangi mavzu, hisoblagichni tozalaymiz
+        if now - conv.get('last_reply', 0) > 1800:
+            conv['reply_count'] = 0
+        return conv
+    except Exception:
+        return None
+
+
+def _conversation_active(conv: dict) -> bool:
+    """Suhbat faolmi: 10 daqiqada kamida 2 ta xabar kelgan."""
+    try:
+        now = time.time()
+        recent = [ts for ts, _ in conv.get('messages', []) if now - ts < 600]
+        return len(recent) >= 2
+    except Exception:
+        return False
+
+
+async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                 text: str, msg, user, triggered: bool):
+    """Boshqa guruhlarda selektiv marketing javob: qiziq xabarlarga javob + reklama.
+
+    QOIDA: faol suhbat bor joyda AI qo'shiladi (har xabarga emas), suhbatni
+    eng qiziq joyigacha olib boradi va FAQAT o'sha joyda reklama qo'yadi.
+    Har bir javobga reklama qo'shilmaydi — suhbat qiziqgan sari reklama
+    ehtimoli oshadi, har 3-javobda kamida bitta reklama.
+    """
+    try:
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'true').lower() == 'true'
+        if not enabled:
+            return
+        ad_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.6') or 0.6)
+        rate_max = int(await sync_to_async(Setting.get_setting)('marketing_rate_per_hour', '5') or 5)
+    except Exception:
+        ad_prob, rate_max = 0.6, 5
+
+    # Bot-bot loopdan saqlanish
+    if getattr(user, 'is_bot', False):
+        return
+
+    chat_id = str(msg.chat.id)
+    username = getattr(user, 'username', None) or ''
+    # A'zoni eslab qolamiz — keyin username orqali murojaat qilish uchun
+    _record_group_member(chat_id, username,
+                         getattr(user, 'first_name', '') or '',
+                         getattr(user, 'id', None))
+    # Operatsion (staff/hisobot/monitor) guruhlarni o'tkazib yuborish
+    try:
+        skip = {
+            str((await sync_to_async(Setting.get_setting)('payment_report_chat_id', '') or '').strip()),
+            str((await sync_to_async(Setting.get_setting)('payment_monitor_chat_id', '') or '').strip()),
+        }
+        if chat_id in skip:
+            return
+    except Exception:
+        pass
+
+    # Suhbatni kuzatamiz
+    conv = _track_group_conversation(chat_id, text)
+
+    # Qiziqarli xabarni tanlash — har xabarga emas. Faol suhbatda qo'shilish
+    # ehtimoli yuqori, yakka xabarga — past.
+    score = _marketing_score(text)
+    active = _conversation_active(conv) if conv else False
+    if triggered:
+        prob = 0.9
+    elif active:
+        # Suhbat davom etayotgan — qo'shilamiz (lekin hali ham tanlab)
+        if score >= 2:
+            prob = 0.85
+        else:
+            prob = 0.45
+    elif score >= 3:
+        prob = 0.8
+    elif score == 2:
+        prob = 0.5
+    elif score == 1:
+        prob = 0.22
+    else:
+        prob = 0.06
+    if random.random() > prob:
+        return
+
+    # Tezlik chegarasi: har guruhda soatiga ko'pi bilan rate_max
+    if not _marketing_rate_ok(chat_id, rate_max):
+        return
+
+    bump(updates=1, messages=1, command='marketing')
+
+    from apps.security import staff_ai
+    chat_title = getattr(msg.chat, 'title', '') or ''
+    # Suhbatdagi so'nggi bir nechta xabarni kontekst sifatida yuboramiz — AI
+    # mavzuni tushunib, suhbatni qiziq joyigacha olib borsin
+    context_lines = ''
+    if conv and len(conv['messages']) > 1:
+        context_lines = '\n'.join(f"- {t}" for _, t in conv['messages'][-4:])
+    result = await sync_to_async(staff_ai.marketing_reply)(
+        text, chat_title, context_lines, author_username=username)
+    answer = (result.get('answer') or '').strip()
+    if not answer:
+        return
+
+    # Reklama: har javobga emas — suhbat qiziqgan joyda. Har 3-javobda kamida
+    # bitta reklama; qolgan hollarda ad_prob ehtimol bilan. Javobning o'zida
+    # donzo tabiiy aytilgan bo'lsa — qo'shimcha reklama qo'shilmaydi (takror
+    # bo'lib, ochiq reklamaga o'xshab qolmasin).
+    sent_ad = False
+    reply_count = (conv or {}).get('reply_count', 0) + 1
+    force_ad = (reply_count % 3 == 0)
+    already_mentioned = 'donzo' in answer.lower()
+    if (force_ad or random.random() < ad_prob) and not already_mentioned:
+        ad = await sync_to_async(_marketing_ad)()
+        if ad:
+            answer = answer.rstrip() + ' ' + ad
+            sent_ad = True
+    try:
+        await msg.reply_html(staff_ai.escape_html(answer))
+    except Exception:
+        pass
+    if conv:
+        conv['reply_count'] = reply_count
+        conv['last_reply'] = time.time()
+    # Statistika: guruhda nechta javob / reklama yuborildi (hech qachon buzmaydi)
+    try:
+        from apps.settings_app.models import MarketingGroupStat
+        await sync_to_async(MarketingGroupStat.record)(chat_id, chat_title, 'reply')
+        if sent_ad:
+            await sync_to_async(MarketingGroupStat.record)(chat_id, chat_title, 'ad')
+    except Exception:
+        pass
+
+
+async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bot yangi guruhga qo'shilganda — salomlashish + platforma reklamasi."""
+    try:
+        mc = update.my_chat_member
+        if mc is None or mc.chat.type not in ('group', 'supergroup'):
+            return
+        nc = mc.new_chat_member
+        if nc is None or getattr(nc, 'user', None) is None or nc.user.id != context.bot.id:
+            return
+        if nc.status not in ('member', 'administrator'):
+            return
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'true').lower() == 'true'
+        if not enabled:
+            return
+        ad = await sync_to_async(_marketing_ad)()
+        if not ad:
+            return
+        welcome = (
+            "👋 Salom, guruh a'zolari!\n"
+            "Men DONZO — o'yinlar va raqamli xizmatlar uchun top-up platformasining "
+            "jonli maskotiman. Savollaringiz bo'lsa, @meni eslatib yozing — "
+            "suhbatga qo'shilaman!\n\n" + ad
+        )
+        await context.bot.send_message(mc.chat.id, welcome, disable_web_page_preview=True)
+        # Statistika: guruhga qo'shilish
+        try:
+            from apps.settings_app.models import MarketingGroupStat
+            await sync_to_async(MarketingGroupStat.record)(
+                str(mc.chat.id), getattr(mc.chat, 'title', '') or '', 'join')
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+async def staff_ai_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Staff guruhida botga reply / @-mention / shaxsiy xabar → DONZO AI javob.
+
+    Faqat staff (super_admin/admin/operator/support) uchun. Boshqa guruhlarda
+    esa marketing rejimi ishlaydi: hamma xabarga emas, eng qiziqlariga javob +
+    platforma reklamasi (angry rejim ham saqlanadi). Javob faqat MA'LUMOT —
+    hech qachon pul/holat o'zgartirmaydi.
+    """
+    msg = update.effective_message
+    user = update.effective_user
+    if msg is None or user is None or not msg.text:
+        return
+    text = (msg.text or '').strip()
+    if not text or text.startswith('/'):
+        return
+
+    # Trigger: botga reply / bot @-mention / "donzo" bilan boshlangan xabar /
+    # shaxsiy chat
+    is_reply_to_bot = False
+    if msg.reply_to_message and msg.reply_to_message.from_user:
+        rfu = msg.reply_to_message.from_user
+        try:
+            is_reply_to_bot = rfu.is_bot and rfu.id == context.bot.id
+        except Exception:
+            is_reply_to_bot = rfu.is_bot
+    bot_username = ''
+    try:
+        bot_username = context.bot.username or ''
+    except Exception:
+        bot_username = ''
+    mentioned = bool(bot_username) and f'@{bot_username.lower()}' in text.lower()
+    starts_with_donzo = re.match(r'^donzo[\s,:!.]*', text, flags=re.IGNORECASE) is not None
+    is_private = bool(msg.chat) and msg.chat.type == 'private'
+    is_group = bool(msg.chat) and msg.chat.type in ('group', 'supergroup')
+
+    # ── Staff yo'li (trigger bo'lsa) ──
+    if is_reply_to_bot or mentioned or starts_with_donzo or is_private:
+        db_user = await db_user_by_tg(str(user.id))
+        if db_user is not None and db_user.role in STAFF_ROLES:
+            if mentioned and bot_username:
+                text = re.sub(rf'@{re.escape(bot_username)}\b', '', text, flags=re.IGNORECASE).strip()
+            if starts_with_donzo:
+                text = re.sub(r'^donzo[\s,:!.]*', '', text, flags=re.IGNORECASE).strip()
+            if not text:
+                text = 'Salom! DONZO tizimi haqida nima bilmoqchisiz?'
+
+            bump(updates=1, messages=1, command='ai')
+
+            from apps.security import staff_ai
+            result = await sync_to_async(staff_ai.staff_chat)(text, db_user.username or str(user.id))
+            answer = result.get('answer') or 'Javob berilmadi.'
+            try:
+                await msg.reply_html(staff_ai.escape_html(answer))
+            except Exception:
+                pass
+            return
+
+    # ── Marketing yo'li (boshqa guruhlar) ──
+    if is_group:
+        await _marketing_group_reply(
+            update, context, text, msg, user,
+            triggered=bool(is_reply_to_bot or mentioned or starts_with_donzo),
+        )
+
+
+# Audio'ni qo'llab-quvvatlaydigan hozirda mavjud modellar — sozlangan model
+# audio inline data'ni qabul qilmasa (text-only) yoki vaqtincha xato bersa
+# (500/429/503) fallback sifatida ishlatiladi. Ro'yxat 2026-08 da jonli
+# sinab ko'rilgan: eski modellar (1.5/2.0/2.5-flash) endi 404 qaytaradi —
+# shuning uchun faqat ListModels'da mavjud bo'lganlar yozilgan.
+_AUDIO_CAPABLE_MODELS = (
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3-flash-preview',
+)
+
+
+async def _transcribe_voice(bot, file_id: str, mime_type: str = 'audio/ogg') -> str:
+    """Ovozli xabarni Gemini orqali matnga aylantiradi. Returns matn yoki ''.
+
+    Sozlangan model audio inline data'ni qo'llab-quvvatlamasa (masalan
+    text-only model) — avtomatik audio-capable fallback modellarga o'tadi.
+    Vaqtinchalik xatolar (429/500/503) uchun qisqa retry + keyingi modelga
+    o'tish bor. Hech qachon exception tashlamaydi (bot buzilmaydi).
+    """
+    try:
+        # Django async kontekstida DB'ga sinxron kirish SynchronousOnlyOperation
+        # tashlaydi — Setting o'qishlar sync_to_async bilan o'ralgan bo'lishi shart.
+        from asgiref.sync import sync_to_async
+        from apps.settings_app.models import Setting
+        key = (await sync_to_async(Setting.get_setting)('gemini_api_key', '') or '')
+        if not key:
+            return ''
+        configured = (await sync_to_async(Setting.get_setting)('gemini_model', 'gemini-3.6-flash') or 'gemini-3.6-flash')
+        # Umumiy quota-cooldown bilan ishlaydi — staff chat bitta modelni
+        # charchatgan bo'lsa, ovoz ham o'sha modelga urilib 429 olmaydi.
+        try:
+            from apps.security.gemini_client import _model_order, _mark_quota
+            models = _model_order(configured)
+        except Exception:
+            models = [configured] + [m for m in _AUDIO_CAPABLE_MODELS if m != configured]
+        import base64
+        import io
+        import time as _time
+        import urllib.error
+        import urllib.request
+        file = await bot.get_file(file_id)
+        b = io.BytesIO()
+        await file.download_to_memory(b)
+        audio_b64 = base64.b64encode(b.getvalue()).decode('ascii')
+        last_err = None
+        for model in models:
+            for attempt in (1, 2):  # 429/500/503 uchun 1 marta qayta urinish
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+                    body = {
+                        'contents': [{'parts': [
+                            {'inline_data': {'mime_type': mime_type, 'data': audio_b64}},
+                            {'text': 'Bu ovozli xabarni matnga aylantir. Aytilgan gaplarni to\'liq yoz. '
+                                     'Faqat transkripsiya — izoh, tarjima yoki qo\'shimcha yozma.'},
+                        ]}],
+                        'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 2048},
+                    }
+                    req = urllib.request.Request(
+                        url, data=json.dumps(body).encode('utf-8'),
+                        headers={'Content-Type': 'application/json'}, method='POST',
+                    )
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        raw = resp.read().decode('utf-8')
+                    data = json.loads(raw)
+                    text = (data['candidates'][0]['content']['parts'][0]['text'] or '').strip()
+                    if text:
+                        return text
+                except urllib.error.HTTPError as exc:
+                    last_err = exc
+                    code = exc.code
+                    # 4xx (404/400/403/429...) — bu model bilan ishlamaydi,
+                    # keyingisiga o'tamiz; 429 bo'lsa modelni cooldown'ga tashlab
+                    # keyingisiga o'tamiz (har modelning o'z limiti bor).
+                    if code == 429:
+                        try:
+                            _mark_quota(model)
+                        except Exception:
+                            pass
+                        break
+                    if code in (500, 502, 503, 504):
+                        if attempt == 1:
+                            _time.sleep(1.5)
+                            continue
+                    break
+                except Exception as exc:
+                    last_err = exc
+                    break
+        if last_err:
+            logging.getLogger(__name__).warning(
+                'transcribe voice failed on all models: %s: %s',
+                type(last_err).__name__, str(last_err)[:200])
+        return ''
+    except Exception as exc:
+        logging.getLogger(__name__).warning('transcribe voice failed: %s: %s', type(exc).__name__, str(exc)[:200])
+        return ''
+
+
+async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Staff guruhida ovozli xabarni eshitib, transkripsiya qilib, kerak bo'lsa javob yozadi.
+
+    Faqat staff (super_admin/admin/operator/support). Ovozli xabar matnga
+    aylantiriladi va staff_ai orqali DONZO AI javob beradi (agar savol bo'lsa).
+    """
+    msg = update.effective_message
+    user = update.effective_user
+    if msg is None or user is None:
+        return
+    voice = msg.voice or msg.audio
+    if voice is None:
+        return
+    db_user = await db_user_by_tg(str(user.id))
+    if db_user is None or db_user.role not in STAFF_ROLES:
+        return
+
+    bump(updates=1, messages=1, command='voice')
+    # Eshitayotganini bildiradi (tezkor javob)
+    try:
+        await msg.reply_text("🎧 Eshitib tushunyapman...")
+    except Exception:
+        pass
+
+    # Telegram voice = OGG/Opus; audio (musiqa/fayl) = o'z mime yoki audio/mpeg
+    _mime = 'audio/ogg'
+    if msg.audio:
+        _mime = getattr(msg.audio, 'mime_type', '') or 'audio/mpeg'
+    text = await _transcribe_voice(context.bot, voice.file_id, _mime)
+    if not text:
+        try:
+            await msg.reply_text("Kechirasiz, ovozli xabarni tushuna olmadim. Matn yozib yuboring.")
+        except Exception:
+            pass
+        return
+
+    from apps.security import staff_ai
+    result = await sync_to_async(staff_ai.staff_chat)(text, db_user.username or str(user.id))
+    answer = result.get('answer') or 'Javob berilmadi.'
+    try:
+        await msg.reply_html(staff_ai.escape_html(answer))
     except Exception:
         pass
 
@@ -918,6 +1885,26 @@ def main():
     print("[BOT] Kutilmoqda... (Ctrl+C bilan to'xtatiladi)")
 
     application = Application.builder().token(token).build()
+
+    # ── Global error handler: PTB'ning "No error handlers are registered"
+    #    xatosi chiqmasligi uchun. Har qanday kutilmagan xato → stats faylga
+    #    yoziladi (admin panel "Bot holati"da ko'rinadi), bot ishdan to'xtamaydi.
+    async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            exc = getattr(context, 'error', None)
+            msg = _scrub_secrets(str(exc))[:300] if exc else 'Noma\'lum xato'
+            lower = msg.lower()
+            if 'conflict' in lower or '409' in msg:
+                kind = 'conflict_409'
+            elif 'networkerror' in lower or 'network error' in lower:
+                kind = 'network_error'
+            else:
+                kind = 'getupdates_error'
+            record_polling_error(kind, msg)
+        except Exception:
+            pass  # error handler hech qachon botni buzmaydi
+
+    application.add_error_handler(_global_error_handler)
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('balance', balance))
     application.add_handler(CommandHandler('orders', orders))
@@ -928,8 +1915,18 @@ def main():
     application.add_handler(CommandHandler('xato', xato_command))
     application.add_handler(CommandHandler('tahlil', tahlil_command))
     application.add_handler(CommandHandler('togrila', togrila_command))
+    application.add_handler(CommandHandler('qaytar', qaytar_command))
     application.add_handler(CommandHandler('restart', restart_command))
     application.add_handler(CommandHandler('tunnel', tunnel_command))
+    # DONZO AI — staff guruhida botga reply / @-mention / shaxsiy xabar
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, staff_ai_handler))
+    # Ovozli xabarlar — staff guruhida eshitib tushunadi (Gemini transkripsiya)
+    application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, voice_handler))
+    # Yangi guruhga qo'shilganda — salomlashish + reklama (marketing)
+    # PTB 21.1'da MyChatMemberHandler yo'q — ChatMemberHandler + MY_CHAT_MEMBER
+    # filtri bilan (bir xil natija: faqat BOTNING o'z holati o'zgarishi).
+    application.add_handler(ChatMemberHandler(
+        chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
     # ── Token validation (getMe) — records valid/invalid so the admin
@@ -956,6 +1953,12 @@ def main():
         pass  # non-fatal — run_polling will surface a real InvalidToken
 
     # Record startup time + restart count, then start the heartbeat thread.
+    # Avval polling lock'ni olamiz — deploy paytida eski instansiya bilan
+    # 409 conflict bo'lmasligi uchun (yuqoriga qarang: _acquire_polling_lock).
+    try:
+        _acquire_polling_lock()
+    except Exception as exc:
+        print(f"[BOT] Polling lock xatosi (davom etiladi): {exc}")
     mark_started()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
     print("[BOT] Stats: .freebuff/bot-stats.json (heartbeat har 30s)")
@@ -963,6 +1966,19 @@ def main():
     # Fragment live-price sync (kuniga bir marta) — bot bilan parallel ishlaydi.
     threading.Thread(target=_price_sync_loop, daemon=True).start()
     print("[BOT] Fragment narx sinxronlash: har 24 soatda (bot orqali)")
+
+    # Proaktiv suhbat — DONZO staff guruhida o'zi "yashaydi": vaqti-vaqti
+    # staff a'zolarini belgilab, hazil/tanqid bilan xabar yozadi.
+    threading.Thread(target=_proactive_loop, daemon=True).start()
+    print("[BOT] Proaktiv suhbat: staff a'zolariga o'zi xabar yozadi")
+
+    # Kunlik ertalabki marketing reklamasi (suratli) — marketing guruhlariga.
+    threading.Thread(target=_daily_marketing_loop, daemon=True).start()
+    print("[BOT] Kunlik marketing reklamasi: har kuni ertalab guruhlarga (suratli)")
+
+    # Guruh a'zolarini username bilan kinoyali murojaat qilish (marketing).
+    threading.Thread(target=_group_roast_loop, daemon=True).start()
+    print("[BOT] Guruh murojaat loopi: a'zolarni username bilan kinoyali murojaat")
 
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES)

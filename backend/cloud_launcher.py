@@ -13,6 +13,8 @@ Qo'shimcha:
     RENDER_EXTERNAL_URL/health/ ga ping yuboradi.
   • SESSION_B64 env'idan user_client sessiyasini tiklaydi (agar mavjud).
   • Kunlik audit hisobotini AUDIT_REPORT_HOUR (UTC, default 9) da yuboradi.
+  • Kunlik KARTA LIMIT RESET hisobotini CARD_REPORT_HOUR (UTC, default 4 =
+    09:00 Toshkent) dan keyin kuniga bir marta yuboradi (staff guruhiga).
   • Har bir jarayon yiqilsa backoff bilan avtomatik qayta ishga tushadi.
 
 Ishlatish:  python cloud_launcher.py
@@ -32,6 +34,7 @@ PORT = os.getenv('PORT', '8000')
 PING_URL = (os.getenv('RENDER_EXTERNAL_URL') or '').rstrip('/')
 PING_INTERVAL = int(os.getenv('PING_INTERVAL', '300'))
 AUDIT_HOUR = int(os.getenv('AUDIT_REPORT_HOUR', '9'))
+CARD_REPORT_HOUR = int(os.getenv('CARD_REPORT_HOUR', '4'))  # UTC — 09:00 Toshkent
 
 _stop = threading.Event()
 
@@ -57,7 +60,16 @@ def _session_bootstrap():
             _log('SESSION', f"DB sessiya o'qilmadi: {type(exc).__name__}: {str(exc)[:120]}")
             return
     if not b64:
-        _log('SESSION', "sessiya topilmadi (env ham, DB ham bo'sh) — user_client ishlamaydi")
+        _log('SESSION', "sessiya topilmadi (env ham, DB ham bo'sh) — eski fayl o'chiriladi")
+        # Neon'da sessiya yo'q — kontenerdagi eski (bloklangan) faylni o'chiramiz,
+        # aks holda worker eski bloklangan sessiyani ishlatib qayta-ketadi.
+        try:
+            stale = os.path.join(BASE_DIR, 'sessions', 'donzo_user.session')
+            if os.path.exists(stale):
+                os.remove(stale)
+                _log('SESSION', 'eski sessiya fayli o\'chirildi')
+        except Exception:
+            pass
         return
     try:
         data = base64.b64decode(b64)
@@ -105,6 +117,15 @@ def _supervise(name, cmd):
     backoff = 5
     restart_flag = os.path.join(BASE_DIR, 'sessions', '.restart_requested')
     while not _stop.is_set():
+        # Self-heal: USERCLIENT har start oldidan sessiyani Neon DB'dan
+        # qayta tiklaymiz. Login wizard Neon'ga yozgan yangi sessiyani
+        # worker darhol oladi; kontener ichidagi eski/buzilgan fayl
+        # ustidan yoziladi. Faqat launcher startida emas — har startda.
+        if name.upper() == 'USERCLIENT':
+            try:
+                _session_bootstrap()
+            except Exception as exc:
+                _log(name, f'sessiya bootstrap xatosi: {type(exc).__name__}: {str(exc)[:120]}')
         proc = _spawn(cmd, name)
         if proc is None:
             _stop.wait(backoff)
@@ -123,7 +144,9 @@ def _supervise(name, cmd):
             _log(name, f"YIQILDI (rc={rc}) — {backoff}s keyin qayta ishga tushadi")
         # rc=5 (user_client): sessiya bloklangan — qayta kirish kerak, tez-tez
         # urinish ma'nosiz. 5 daqiqada bir marta urinamiz.
-        if rc == 5 and name.upper() == 'USERCLIENT':
+        # rc=4 (EXIT_NOT_AUTHORIZED): sessiya noto'g'ri/bloklangan — ham faqat
+        # qayta kirish bilan hal bo'ladi, 5 daqiqada bir marta urinamiz.
+        if rc in (4, 5) and name.upper() == 'USERCLIENT':
             backoff = 300
         # Admin panel orqali qayta kirish tugallanganda _restart_worker()
         # shu flag faylni yaratadi — backoff'ni kutmasdan darhol qayta
@@ -238,6 +261,17 @@ def _health_report_loop():
             _log('HEALTH', f"holat hisoboti: {'yuborildi' if ok else 'yuborilmadi (chat/token tekshiring)'}")
         except Exception as exc:
             _log('HEALTH', f"holat hisoboti xatosi: {type(exc).__name__}: {str(exc)[:120]}")
+        try:
+            # KUNLIK LIMIT RESET hisoboti — CARD_REPORT_HOUR (UTC) dan keyin
+            # kuniga bir marta staff guruhiga (marker takror yuborishni oldini oladi).
+            if dt.datetime.utcnow().hour >= CARD_REPORT_HOUR:
+                import django
+                django.setup()
+                from apps.cardpay import services as cardpay_services
+                ok2 = cardpay_services.send_daily_card_reset_report()
+                _log('CARDS', f"kunlik limit reset hisoboti: {'yuborildi' if ok2 else 'allaqachon yuborilgan / yuborilmadi'}")
+        except Exception as exc:
+            _log('CARDS', f"limit reset hisoboti xatosi: {type(exc).__name__}: {str(exc)[:120]}")
         if _stop.wait(interval):
             return
 
@@ -245,6 +279,18 @@ def _health_report_loop():
 def main():
     _log('MAIN', f"DONZO cloud launcher — port {PORT}")
     _session_bootstrap()
+    # Konteyner boshlangan vaqt — health report'ga: deploy/startup paytida
+    # komponentlar hali boshlanayotgan bo'ladi (polling-lock 10 daqiqagacha
+    # kutadi), bu davrda noto'g'ri 'o'lik' signali chiqmasligi uchun.
+    try:
+        import django
+        django.setup()
+        from apps.settings_app.models import Setting
+        Setting.set_setting('cloud_launcher_started_at',
+                            dt.datetime.now(dt.timezone.utc).isoformat())
+        _log('MAIN', 'boshlanish vaqti yozildi (health-report grace)')
+    except Exception as exc:
+        _log('MAIN', f"boshlanish vaqti yozilmadi: {type(exc).__name__}: {str(exc)[:120]}")
 
     procs = [
         ('DAPHNE', [sys.executable, '-m', 'daphne', '-b', '0.0.0.0',

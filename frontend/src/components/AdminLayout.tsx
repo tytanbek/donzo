@@ -8,7 +8,7 @@ import { useStore } from '@/lib/store';
 import {
   FiLayout, FiPackage, FiShoppingBag, FiGrid, FiImage,
   FiSettings, FiUsers, FiLogOut, FiChevronLeft, FiChevronRight, FiBarChart2, FiFileText,
-  FiTag, FiDollarSign, FiSearch, FiActivity, FiTrendingUp, FiKey, FiSend, FiShield, FiBell, FiMenu, FiX, FiZap, FiCreditCard, FiRadio, FiUser, FiLayers
+  FiTag, FiDollarSign, FiSearch, FiActivity, FiTrendingUp, FiKey, FiSend, FiShield, FiBell, FiMenu, FiX, FiZap, FiCreditCard, FiRadio, FiUser, FiLayers, FiSpeaker
 } from 'react-icons/fi';
 import CommandPalette from '@/components/CommandPalette';
 
@@ -43,6 +43,7 @@ const sidebarGroups: SidebarGroup[] = [
       { icon: FiUser, label: 'User Client', href: '/admin/user-client', roles: ['admin', 'super_admin'] },
       { icon: FiTag, label: 'Promo Kodlar', href: '/admin/promocodes', roles: ['admin', 'super_admin'] },
       { icon: FiBell, label: 'Bildirishnomalar', href: '/admin/notifications', roles: ['admin', 'super_admin'] },
+      { icon: FiSpeaker, label: 'Marketing', href: '/admin/marketing', roles: ['admin', 'super_admin'] },
     ],
   },
   {

@@ -322,31 +322,45 @@ if (-not $watchdogMutex.WaitOne(0)) {
 }
 
 Log '=== DONZO watchdog started ==='
+# CLOUD MODE: .freebuff\cloud_mode fayli mavjud bo'lsa backend, bot,
+# user_client, tunnel va postgres CLOUD'da (Render/Neon) ishlaydi —
+# lokalda BIRORTASINI ham boshlamaymiz. Aks holda: lokal daphne eski
+# backend nusxasi bo'lib qoladi, lokal bot esa Render boti bilan
+# getUpdates polling konflikti (409) chiqaradi, tunnel esa o'lik
+# URL sinxronlashga urinadi. Faqat frontend dev server (3002) lokalda
+# qoladi — Render API'ga ishora qiladi va lokal rivojlantirish uchun.
+$cloudMode = Test-Path (Join-Path $freebuff 'cloud_mode')
 while ($true) {
     try {
-        Start-Postgres
-        Start-Tunnel
-        Start-Daphne
-        # HTTP-javob tekshiruvi: port ochiq, lekin javob bermasa (2 marta
-        # ketma-ket) daphne'ni qayta ishga tushir — 'javob bermayapti'
-        # hisobotlari shu bilan yo'qoladi.
-        if (Test-Port 8000) {
-            if (Test-BackendAlive) { $backendDead = 0 }
-            else {
-                $backendDead++
-                if ($backendDead -ge 2) { Repair-Backend; $backendDead = 0 }
+        if ($cloudMode) {
+            # CLOUD rejimi — lokal backend/tunnel/postgres/bot boshlamaymiz.
+            # Lekin eski qoldiq jarayonlar bo'lsa tozalaymiz (bir marta).
+            if (-not $script:cloudCleaned) {
+                Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -match 'daphne' } |
+                    ForEach-Object { & taskkill /F /T /PID $_.ProcessId 2>&1 | Out-Null }
+                $script:cloudCleaned = $true
+                Log 'CLOUD MODE: eski lokal daphne jarayonlari tozalandi'
             }
-        } else { $backendDead = 0 }
-        # CLOUD MODE: .freebuff\cloud_mode fayli mavjud bo'lsa bot va
-        # user_client CLOUD'da (Render) ishlaydi — lokalda boshlamaymiz.
-        # Aks holda ikkala tomonda getUpdates/polling konflikti bo'ladi.
-        $cloudMode = Test-Path (Join-Path $freebuff 'cloud_mode')
-        if (-not $cloudMode) {
+        } else {
+            Start-Postgres
+            Start-Tunnel
+            Start-Daphne
+            # HTTP-javob tekshiruvi: port ochiq, lekin javob bermasa (2 marta
+            # ketma-ket) daphne'ni qayta ishga tushir — 'javob bermayapti'
+            # hisobotlari shu bilan yo'qoladi.
+            if (Test-Port 8000) {
+                if (Test-BackendAlive) { $backendDead = 0 }
+                else {
+                    $backendDead++
+                    if ($backendDead -ge 2) { Repair-Backend; $backendDead = 0 }
+                }
+            } else { $backendDead = 0 }
             Start-BotSupervisor
             Start-UserClientSupervisor
+            Sync-TunnelUrl
         }
         Start-Frontend
-        Sync-TunnelUrl
     } catch {
         Log ('WATCHDOG ERROR: ' + $_.Exception.Message)
     }
