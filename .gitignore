@@ -36,3 +36,10 @@ frontend/.vercel/
 Thumbs.db
 .DS_Store
 *.session-journal
+
+# Session fayllar (katta va maxfiy)
+backend/sessions/
+*.session
+backend/render-service-id.txt
+backend/tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
