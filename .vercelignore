@@ -1,0 +1,16 @@
+node_modules
+.next
+.vercel
+*.sess*
+sessions/
+__pycache__
+*.pyc
+.git
+.env
+.env.local
+*.sqlite3
+freebuff-bot.session
+freebuff-bot.session-journal
+donzo_user.session
+donzo_user.session-journal
+venv/
