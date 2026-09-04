@@ -376,12 +376,16 @@ def _send_daily_marketing():
             bot_username = (Setting.get_setting('telegram_bot_username', 'DONZOROBOT') or 'DONZOROBOT').strip().lstrip('@')
         except Exception:
             bot_username = 'DONZOROBOT'
-        caption = "\n".join([
-            "🌅 Xayrli tong, guruh!",
-            "Bugun ham DONZO'da: eng arzon narxlar, 1 daqiqada top-up.",
-            "🎮 PUBG · Free Fire · Mobile Legends · Telegram Premium · 100+ xizmat",
-            f"🚀 Ochish: @{bot_username}",
-        ])
+        # Creative reklama — sirli shaxs uslubida, sotib olishga da'vat bilan
+        creative_ads = [
+            "🎭 DONZO — sirli platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon tayyor turaman.",
+            "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
+            "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
+            "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
+            "🔥 DONZO — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
+            "💎 Premium kerakmi? DONZO'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
+        ]
+        caption = random.choice(creative_ads)
 
         # Guruhlar: bot marketing qilgan barcha guruhlar (operatsionlardan tashqari)
         skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
@@ -429,6 +433,74 @@ def _daily_marketing_loop():
         except Exception:
             pass
         time.sleep(60)
+
+
+def _send_creative_ad_to_groups():
+    """Marketing guruhlariga sirli shaxs sifatida creative reklama yuboradi.
+
+    Har 2-4 soatda bir marta tasodifiy guruhga creative reklama yuboriladi.
+    Bot sirli shaxs sifatida o'zini ko'rsatadi — reklama emas, sirli eslatma.
+    Hech qachon exception tashlamaydi.
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupStat, Setting
+        token = Setting.get_setting('telegram_bot_token', '') or ''
+        if not token:
+            return
+        skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+                str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
+        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
+        if not groups:
+            return
+        # Tasodifiy guruh tanlaymiz (faqat bittasiga yuboramiz — spam emas)
+        random.shuffle(groups)
+        g = groups[0]
+        cid = str(g['chat_id'])
+        if not cid or cid in skip:
+            return
+        creative_msgs = [
+            "🎭 DONZO — sirli platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon tayyor turaman. donzoda tekshirib ko'ring.",
+            "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
+            "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
+            "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
+            "🔥 DONZO — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
+            "💎 Premium kerakmi? DONZO'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
+            "🏆 DONZO bilan g'alaba qozon. O'yin rebeting oshadi, donating arzonlashadi. Sinab ko'r — afsus qilmaysan.",
+            "🎯 DONZO — maqsadga yo'naltirilgan platforma. Narxlar ham, tezlik ham, sifat ham — hammasi o'z joyida.",
+            "🚀 DONZO'da yangilik bor — endi hamma o'yin uchun donat qilish mumkin. Boshqa joyda topa olmaysan.",
+            "❄️ DONZO — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
+        ]
+        msg = random.choice(creative_msgs)
+        res = _tg_api(token, 'sendMessage', {
+            'chat_id': cid,
+            'text': msg,
+            'disable_web_page_preview': True,
+        })
+        if res and res.get('ok'):
+            MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+            print(f"[MARKETING] Creative reklama: {cid} ({g.get('chat_title', '')})", flush=True)
+    except Exception as exc:
+        print(f"[MARKETING] Creative reklama xatosi: {type(exc).__name__}", flush=True)
+
+
+def _creative_ad_loop():
+    """Har 3 soatda tasodifiy guruhga creative reklama yuboradi.
+
+    Sozlamalar:
+      marketing_daily_enabled — 'true'/'false'
+    Xato hech narsani buzmaydi; loop abadiy ishlaydi.
+    """
+    time.sleep(300)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
+    while True:
+        interval = 3 * 60 * 60  # 3 soat
+        try:
+            from apps.settings_app.models import Setting
+            enabled = (Setting.get_setting('marketing_daily_enabled', 'false') or 'false').lower() == 'true'
+            if enabled:
+                _send_creative_ad_to_groups()
+        except Exception:
+            pass
+        time.sleep(interval)
 
 
 def _proactive_loop():
@@ -1468,18 +1540,19 @@ def _marketing_rate_ok(chat_id: str, max_per_hour: int) -> bool:
 
 
 def _marketing_ad() -> str:
-    """DONZO'ni tabiiy eslatish — OCHIQ reklama emas, xuddi suhbat orasida
-    tasodifan tashlangan jumladek. Banner, ro'yxat, emoji-bo'ron YO'Q —
-    odam shunday deyishi mumkin bo'lgan oddiy gap."""
+    """DONZO kreativ reklamasi — sirli shaxs sifatida, sotib olishga da'vat.
+    Har safar yangi, takrorlanmas reklama. Mijozni qiziqtiradigan, sirli ohangda."""
     ads = [
-        "o'sha yerda olasan-da, donzoda — nimaga boshqa joyda qiynalasan",
-        "donzo degan joy bor, shu yerda yozasan-da, tayyor",
-        "men o'sha yerdan olaman, donzo deydilar — boshqa gap yo'q",
-        "donzoda olasan, xolos. boshqa savol tugatildi",
-        "qayerdan? donzoda-da, nimaga o'ylab o'tiribsan",
-        "donzodan ol, tez bo'ladi — o'zim ishlataman, bilaman",
-        "hali ham izlayapsanmi? donzo bor, yozasan-da, bo'ldi",
-        "men o'shani donzodan olaman — arzonroq ham chiqadi",
+        "🎭 Donzo — sirli platforma. Narxlarni ko'rsang, ishonmay qolasan. donzoda tekshirib ko'r.",
+        "🌙 Donzo — tuni bilan ishlaydi, senga 1 daqiqada yetkazadi. Boshqa joyda kutasan, bu yerda olasan.",
+        "⚡ Donzo'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
+        "🎮 O'yinda yengilmoqchimisan? Donzo'dan diamant/UC olishning sirini bilasanmi? donzoda ol — o'yin o'zgarsin.",
+        "🔥 Donzo — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
+        "💎 Premium kerakmi? Donzo'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
+        "🏆 Donzo bilan g'alaba qozon. O'yin rebating oshadi, donating arzonlashadi. Sinab ko'r — afsus qilmaysan.",
+        "🎯 Donzo — maqsadga yo'naltirilgan platforma. Narxlar ham, tezlik ham, sifat ham — hammasi o'z joyida.",
+        "🚀 Donzo'da yangilik bor — endi hamma o'yin uchun donat qilish mumkin. Boshqa joyda topa olmaysan.",
+        "❄️ Donzo — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
     ]
     return random.choice(ads)
 
@@ -1563,31 +1636,14 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     # Suhbatni kuzatamiz
     conv = _track_group_conversation(chat_id, text)
 
-    # Qiziqarli xabarni tanlash — har xabarga emas. Faol suhbatda qo'shilish
-    # ehtimoli yuqori, yakka xabarga — past.
-    score = _marketing_score(text)
-    active = _conversation_active(conv) if conv else False
-    if triggered:
-        prob = 0.9
-    elif active:
-        # Suhbat davom etayotgan — qo'shilamiz (lekin hali ham tanlab)
-        if score >= 2:
-            prob = 0.85
-        else:
-            prob = 0.45
-    elif score >= 3:
-        prob = 0.8
-    elif score == 2:
-        prob = 0.5
-    elif score == 1:
-        prob = 0.22
-    else:
-        prob = 0.06
-    if random.random() > prob:
+    # ── FAQAT MUROJAT QILINGANDA JAVOB BERILADI ──
+    # Bot guruhlarda faqat Reply / @-mention / "donzo" yozilganda gapiradi.
+    # Boshqa xabarlarga — jim. Reklama va creative yozuvlar alohida loopdan yuboriladi.
+    if not triggered:
         return
 
-    # Tezlik chegarasi: har guruhda soatiga ko'pi bilan rate_max
-    if not _marketing_rate_ok(chat_id, rate_max):
+    # Tezlik chegarasi: har guruhda soatiga ko'pi bilan 10 ta javob
+    if not _marketing_rate_ok(chat_id, 10):
         return
 
     bump(updates=1, messages=1, command='marketing')
@@ -1653,10 +1709,12 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not ad:
             return
         welcome = (
-            "👋 Salom, guruh a'zolari!\n"
-            "Men DONZO — o'yinlar va raqamli xizmatlar uchun top-up platformasining "
-            "jonli maskotiman. Savollaringiz bo'lsa, @meni eslatib yozing — "
-            "suhbatga qo'shilaman!\n\n" + ad
+            "🎭 *DONZO* — meni sezdingizmi?\n\n"
+            "Men sirli platformaman. Siz o'yinlarda yengilmoqchi bo'lganingizda, "
+            "men allaqachon tayyor turaman. PUBG, Free Fire, Telegram Premium — "
+            "hammasi 1 daqiqada.\n\n"
+            "Savolingiz bo'lsa — menga yozing. Men javob beraman. 🌙\n\n"
+            + ad
         )
         await context.bot.send_message(mc.chat.id, welcome, disable_web_page_preview=True)
         # Statistika: guruhga qo'shilish
@@ -2027,6 +2085,10 @@ def main():
     # Guruh a'zolarini username bilan kinoyali murojaat qilish (marketing).
     threading.Thread(target=_group_roast_loop, daemon=True).start()
     print("[BOT] Guruh murojaat loopi: a'zolarni username bilan kinoyali murojaat")
+
+    # Creative reklama — har 3 soatda tasodifiy guruhga sirli shaxs reklamasi.
+    threading.Thread(target=_creative_ad_loop, daemon=True).start()
+    print("[BOT] Creative reklama loopi: har 3 soatda sirli shaxs reklamasi")
 
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
