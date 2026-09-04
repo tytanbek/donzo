@@ -43,3 +43,5 @@ backend/sessions/
 backend/render-service-id.txt
 backend/tsconfig.tsbuildinfo
 frontend/tsconfig.tsbuildinfo
+
+.vercel

@@ -37,7 +37,10 @@ import django
 django.setup()
 
 from asgiref.sync import sync_to_async
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo,
+    BotCommand, MenuButtonWebApp, MenuButtonCommands,
+)
 from telegram.error import InvalidToken
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes,
@@ -487,6 +490,51 @@ db_bot_config = sync_to_async(_get_bot_config)
 db_user_by_tg = sync_to_async(_get_user_by_tg)
 db_balance_info = sync_to_async(_get_balance_info)
 db_recent_orders = sync_to_async(_get_recent_orders)
+
+
+# Public command list shown in Telegram's "/" menu for every user.
+_PUBLIC_COMMANDS = [
+    BotCommand('start', "Botni ishga tushirish / Web App'ni ochish"),
+    BotCommand('login', 'Web App uchun kirish kodini olish'),
+    BotCommand('balance', 'Balansim va keshbek'),
+    BotCommand('orders', 'Buyurtmalarim'),
+    BotCommand('help', 'Yordam va qo\'llab-quvvatlash'),
+]
+
+
+async def _post_init(application) -> None:
+    """One-time bot setup on every launch — makes the Mini App PUBLIC.
+
+    Without this the "Open App" button only appears for users who send
+    /start and receive the inline keyboard. Registering a global menu
+    button + command list means every user who opens @DONZOROBOT sees the
+    "Open App" button next to the input field immediately.
+
+    Safe to run on each restart: Telegram treats all three calls as
+    idempotent upserts. If web_app_url is missing / not HTTPS we fall back
+    to the plain commands menu instead of showing a broken button.
+    """
+    try:
+        _, web_app_url, _ = await db_bot_config()
+        web_app_url = str(web_app_url or '').strip().rstrip('/')
+
+        await application.bot.set_my_commands(_PUBLIC_COMMANDS)
+
+        if web_app_url.startswith('https://'):
+            await application.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text='Ochish',
+                    web_app=WebAppInfo(url=web_app_url),
+                )
+            )
+            print(f"[BOT] Menu button → Web App: {web_app_url}")
+        else:
+            await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+            print(f"[BOT] XATO: web_app_url HTTPS emas ({web_app_url!r}) — "
+                  "menu button 'commands' ga tushirildi")
+    except Exception as exc:
+        # Never let setup failure stop the bot from polling.
+        print(f"[BOT] post_init ogohlantirish: {_scrub_secrets(str(exc))[:200]}")
 
 
 def _get_staff_quick_stats(user):
@@ -1884,7 +1932,7 @@ def main():
     print(f"[BOT] Support: {support}")
     print("[BOT] Kutilmoqda... (Ctrl+C bilan to'xtatiladi)")
 
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(token).post_init(_post_init).build()
 
     # ── Global error handler: PTB'ning "No error handlers are registered"
     #    xatosi chiqmasligi uchun. Har qanday kutilmagan xato → stats faylga

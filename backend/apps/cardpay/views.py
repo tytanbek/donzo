@@ -364,19 +364,67 @@ class SuspiciousActionView(APIView):
         return Response(result)
 
 
+def _req_slot(request) -> int:
+    """slot from body or query string; defaults to 1 (legacy client)."""
+    raw = (request.data.get('slot') if hasattr(request, 'data') else None) \
+        or request.query_params.get('slot') or 1
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 1
+
+
 class UserClientStatusView(APIView):
     """
-    GET /api/v1/admin/cardpay/userclient/status/
+    GET /api/v1/admin/cardpay/userclient/status/[?slot=N]
 
     Telethon user client login holati: authorized, phone/username (masked by
-    design — no secrets), worker heartbeat.
+    design — no secrets), worker heartbeat. slot=N → qo'shimcha akkaunt.
     """
 
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
 
     def get(self, request):
         from . import user_client_auth
-        return Response(user_client_auth.get_status())
+        return Response(user_client_auth.get_status(_req_slot(request)))
+
+
+class UserClientListView(APIView):
+    """
+    GET  /api/v1/admin/cardpay/userclients/            — slot 1 + all extras
+    POST /api/v1/admin/cardpay/userclients/  {label}   — add a new extra slot
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        from . import user_client_auth
+        return Response(user_client_auth.list_accounts())
+
+    def post(self, request):
+        from . import user_client_auth
+        return Response(user_client_auth.create_account(request.data.get('label') or ''))
+
+
+class UserClientAccountView(APIView):
+    """
+    PATCH  /api/v1/admin/cardpay/userclients/<slot>/  {enabled}
+    DELETE /api/v1/admin/cardpay/userclients/<slot>/
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def patch(self, request, slot):
+        from . import user_client_auth
+        result = user_client_auth.set_enabled(int(slot), bool(request.data.get('enabled')))
+        code = status.HTTP_200_OK if result.get('ok') else status.HTTP_400_BAD_REQUEST
+        return Response(result, status=code)
+
+    def delete(self, request, slot):
+        from . import user_client_auth
+        result = user_client_auth.delete_account(int(slot))
+        code = status.HTTP_200_OK if result.get('ok') else status.HTTP_400_BAD_REQUEST
+        return Response(result, status=code)
 
 
 class UserClientAuthStartView(APIView):
@@ -393,7 +441,7 @@ class UserClientAuthStartView(APIView):
     def post(self, request):
         from . import user_client_auth
         phone = (request.data.get('phone') or '').strip()
-        result = user_client_auth.start_phone(phone)
+        result = user_client_auth.start_phone(phone, _req_slot(request))
         code = status.HTTP_200_OK if result.get('ok') else status.HTTP_400_BAD_REQUEST
         return Response(result, status=code)
 
@@ -413,7 +461,7 @@ class UserClientAuthVerifyView(APIView):
     def post(self, request):
         from . import user_client_auth
         code = (request.data.get('code') or '').strip()
-        result = user_client_auth.verify_code(code)
+        result = user_client_auth.verify_code(code, _req_slot(request))
         # needs_password xato emas — kod TO'G'RI, keyingi qadam (2FA parol).
         # 400 bo'lsa frontend catch'ga tushib 'kod tekshirilmadi' degan noto'g'ri
         # xabar ko'rsatardi — 200 qaytarib oqimni aniq qilamiz.
@@ -431,7 +479,7 @@ class UserClientAuthPasswordView(APIView):
     def post(self, request):
         from . import user_client_auth
         password = request.data.get('password') or ''
-        result = user_client_auth.verify_password(password)
+        result = user_client_auth.verify_password(password, _req_slot(request))
         code = status.HTTP_200_OK if result.get('ok') else status.HTTP_400_BAD_REQUEST
         return Response(result, status=code)
 
@@ -443,7 +491,7 @@ class UserClientLogoutView(APIView):
 
     def post(self, request):
         from . import user_client_auth
-        return Response(user_client_auth.logout())
+        return Response(user_client_auth.logout(_req_slot(request)))
 
 
 class UserClientDetailView(APIView):
@@ -502,7 +550,7 @@ class UserClientRestartView(APIView):
 
     def post(self, request):
         from . import user_client_auth
-        user_client_auth._restart_worker()
+        user_client_auth._restart_worker(_req_slot(request))
         return Response({'ok': True, 'detail': 'Worker qayta ishga tushirilmoqda (supervisor ~5s)'})
 
 

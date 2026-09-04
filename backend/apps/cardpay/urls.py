@@ -15,7 +15,11 @@ urlpatterns = [
     path('cardpay/suspicious/<int:pk>/approve/', views.SuspiciousActionView.as_view(), name='admin-cardpay-suspicious-approve', kwargs={'action': 'approve'}),
     path('cardpay/suspicious/<int:pk>/reject/', views.SuspiciousActionView.as_view(), name='admin-cardpay-suspicious-reject', kwargs={'action': 'reject'}),
     path('cardpay/status/', views.CardpayStatusView.as_view(), name='admin-cardpay-status'),
+    # Extra Telethon monitor accounts (slot >= 2) — redundancy on the SAME chat
+    path('cardpay/userclients/', views.UserClientListView.as_view(), name='admin-userclients'),
+    path('cardpay/userclients/<int:slot>/', views.UserClientAccountView.as_view(), name='admin-userclient-account'),
     # User client (Telethon) admin-panel login — phone/code/2FA wizard
+    # (all accept an optional ?slot=N / {slot:N}; default 1 = legacy client)
     path('cardpay/userclient/status/', views.UserClientStatusView.as_view(), name='admin-userclient-status'),
     path('cardpay/userclient/start/', views.UserClientAuthStartView.as_view(), name='admin-userclient-start'),
     path('cardpay/userclient/verify/', views.UserClientAuthVerifyView.as_view(), name='admin-userclient-verify'),

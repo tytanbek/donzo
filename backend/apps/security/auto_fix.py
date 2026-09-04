@@ -402,7 +402,7 @@ def _gemini_patch(problem: str, health_text: str = '') -> dict:
     try:
         from apps.settings_app.models import Setting
         key = Setting.get_setting('gemini_api_key', '') or ''
-        model = Setting.get_setting('gemini_model', 'gemini-1.5-flash') or 'gemini-1.5-flash'
+        model = Setting.get_setting('gemini_model', 'gemini-3.6-flash') or 'gemini-3.6-flash'
         if not key:
             return {'ok': False, 'error': 'gemini_api_key sozlanmagan'}
         import urllib.request

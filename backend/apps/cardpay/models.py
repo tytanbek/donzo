@@ -241,6 +241,68 @@ class SuspiciousPayment(models.Model):
         return f"Suspicious {self.amount} so'm ({self.status})"
 
 
+class UserClientAccount(models.Model):
+    """One EXTRA Telethon card-monitor account (slot >= 2).
+
+    The original single monitor (slot 1) keeps its legacy storage
+    (`user_client_session_b64` Setting + sessions/donzo_user.session) and
+    code path untouched. Rows here are additional accounts that watch the
+    SAME monitor chat for redundancy: whichever client sees a bank message
+    first consumes it; the others get a harmless `duplicate` outcome thanks
+    to the unique (chat_id, message_id) guard on CardPaymentMessage.
+
+    `session_b64` is a full Telethon session (equiv. to a logged-in
+    account) — it is never exposed through any endpoint.
+    """
+
+    slot = models.PositiveSmallIntegerField(
+        unique=True,
+        help_text="Barqaror raqam (2..N). Sessiya fayli nomida ishlatiladi.",
+    )
+    label = models.CharField(max_length=80, blank=True, default='')
+    phone = models.CharField(max_length=20, blank=True, default='')
+    # Full Telethon session, base64. Secret — same trust boundary as the DB.
+    session_b64 = models.TextField(blank=True, default='')
+    enabled = models.BooleanField(default=True)
+    authorized = models.BooleanField(default=False)
+
+    username = models.CharField(max_length=100, blank=True, default='')
+    tg_user_id = models.CharField(max_length=32, blank=True, default='')
+    first_name = models.CharField(max_length=120, blank=True, default='')
+
+    last_heartbeat = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True, default='')
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    restarts = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_client_accounts'
+        ordering = ['slot']
+
+    def __str__(self):
+        who = self.username or self.phone or '—'
+        return f"UserClient #{self.slot} ({who}, {'on' if self.enabled else 'off'})"
+
+    @property
+    def online(self) -> bool:
+        """Heartbeat seen in the last 3 minutes."""
+        if not self.last_heartbeat:
+            return False
+        return (timezone.now() - self.last_heartbeat).total_seconds() < 180
+
+    @classmethod
+    def next_free_slot(cls) -> int:
+        """Lowest unused slot number, starting at 2 (slot 1 = legacy client)."""
+        used = set(cls.objects.values_list('slot', flat=True))
+        n = 2
+        while n in used:
+            n += 1
+        return n
+
+
 def parse_amounts_from_text(text: str) -> list:
     """Extract candidate UZS amounts from a bank-notification message.
 

@@ -458,7 +458,255 @@ export default function AdminUserClientPage() {
             )}
           </div>
         </motion.div>
+
+        {/* ── Qo'shimcha monitor akkauntlar (zaxira) ── */}
+        <ExtraUserClients />
       </div>
     </div>
+  );
+}
+
+/**
+ * Bir nechta Telethon monitor akkaunt — hammasi BIR XIL chatni kuzatadi
+ * (zaxira/redundantlik). Xabarni birinchi ko'rgan akkaunt hisoblaydi,
+ * qolganlari (chat_id, message_id) unikal cheklovi tufayli 'duplicate'.
+ */
+function ExtraUserClients() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [wiz, setWiz] = useState<{ slot: number; step: 'phone' | 'code' | 'password' } | null>(null);
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const r = await cardpayAPI.userClients();
+      setRows((r.data?.accounts || []).filter((a: any) => !a.legacy));
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 20000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const addClient = async () => {
+    setBusy(true);
+    try {
+      const r = await cardpayAPI.userClientCreate();
+      toast.success(`Slot ${r.data?.slot} qo'shildi`);
+      await load();
+    } catch {
+      toast.error("Qo'shib bo'lmadi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeClient = async (slot: number) => {
+    if (!confirm(`Slot ${slot} o'chirilsinmi? Sessiya ham o'chadi.`)) return;
+    setBusy(true);
+    try {
+      await cardpayAPI.userClientRemove(slot);
+      await load();
+    } catch {
+      toast.error("O'chirib bo'lmadi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async (slot: number, enabled: boolean) => {
+    setBusy(true);
+    try {
+      await cardpayAPI.userClientSetEnabled(slot, enabled);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startWiz = async (slot: number) => {
+    if (!phone.trim()) { toast.error('Telefon raqam kiriting'); return; }
+    setBusy(true);
+    try {
+      const r = await cardpayAPI.userClientStart(phone.trim(), slot);
+      if (r.data?.ok) { setWiz({ slot, step: 'code' }); toast.success('Kod yuborildi'); }
+      else toast.error(r.data?.detail || 'Xato');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Kod yuborilmadi');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyWiz = async (slot: number) => {
+    setBusy(true);
+    try {
+      const r = await cardpayAPI.userClientVerify(code.trim(), slot);
+      if (r.data?.ok) { toast.success('Kirildi'); setWiz(null); setPhone(''); setCode(''); await load(); }
+      else if (r.data?.needs_password) setWiz({ slot, step: 'password' });
+      else toast.error(r.data?.detail || 'Kod xato');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Kod tekshirilmadi');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const passwordWiz = async (slot: number) => {
+    setBusy(true);
+    try {
+      const r = await cardpayAPI.userClientPassword(password, slot);
+      if (r.data?.ok) { toast.success('Kirildi'); setWiz(null); setPhone(''); setCode(''); setPassword(''); await load(); }
+      else toast.error(r.data?.detail || 'Parol xato');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Parol qabul qilinmadi');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const logoutSlot = async (slot: number) => {
+    if (!confirm(`Slot ${slot} akkauntdan chiqilsinmi?`)) return;
+    setBusy(true);
+    try { await cardpayAPI.userClientLogout(slot); await load(); } finally { setBusy(false); }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-white/10 bg-[#0B1120]/60 p-5 mt-6"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <FiUser className="w-4 h-4 text-[#00F5FF]" />
+          Qo&apos;shimcha monitor akkauntlar (zaxira)
+        </h3>
+        <button
+          onClick={addClient} disabled={busy}
+          className="px-3 py-1.5 rounded-lg bg-[#00F5FF]/10 hover:bg-[#00F5FF]/20 text-[#00F5FF] border border-[#00F5FF]/25 text-xs font-semibold disabled:opacity-50"
+        >
+          + Akkaunt qo&apos;shish
+        </button>
+      </div>
+
+      <p className="text-[11px] text-[#64748B] mb-4">
+        Hammasi bir xil monitor chatni kuzatadi. Xabarni birinchi ko&apos;rgan
+        akkaunt hisoblaydi — qolganlari xavfsiz &quot;dublikat&quot;. Bepul
+        Render konteynerida ko&apos;p akkaunt xotirani band qiladi.
+      </p>
+
+      {loading ? (
+        <p className="text-xs text-[#64748B]">Yuklanmoqda…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-[#64748B]">Qo&apos;shimcha akkaunt yo&apos;q.</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div key={r.slot} className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-mono text-[#94A3B8]">#{r.slot}</span>
+                  {r.authorized ? (
+                    <span className="text-green-400 flex items-center gap-1">
+                      <FiCheckCircle className="w-3.5 h-3.5" />
+                      {r.username ? `@${r.username}` : r.phone || 'kirilgan'}
+                    </span>
+                  ) : (
+                    <span className="text-amber-400 flex items-center gap-1">
+                      <FiAlertTriangle className="w-3.5 h-3.5" /> kirilmagan
+                    </span>
+                  )}
+                  <span className={r.worker_online ? 'text-green-400' : 'text-[#64748B]'}>
+                    {r.worker_online ? '● onlayn' : '○ oflayn'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => toggle(r.slot, !r.enabled)} disabled={busy}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-semibold border ${
+                      r.enabled
+                        ? 'bg-green-500/10 text-green-400 border-green-500/25'
+                        : 'bg-white/5 text-[#64748B] border-white/10'
+                    }`}
+                  >
+                    {r.enabled ? 'Yoqilgan' : "O'chirilgan"}
+                  </button>
+                  {r.authorized && (
+                    <button onClick={() => logoutSlot(r.slot)} disabled={busy}
+                      className="px-2 py-1 rounded-lg text-[11px] bg-white/5 text-[#94A3B8] border border-white/10">
+                      Chiqish
+                    </button>
+                  )}
+                  {!r.authorized && (
+                    <button onClick={() => { setWiz({ slot: r.slot, step: 'phone' }); setPhone(''); setCode(''); }}
+                      disabled={busy}
+                      className="px-2 py-1 rounded-lg text-[11px] bg-[#00F5FF]/10 text-[#00F5FF] border border-[#00F5FF]/25">
+                      Kirish
+                    </button>
+                  )}
+                  <button onClick={() => removeClient(r.slot)} disabled={busy}
+                    className="px-2 py-1 rounded-lg text-[11px] bg-red-500/10 text-red-400 border border-red-500/25">
+                    O&apos;chirish
+                  </button>
+                </div>
+              </div>
+
+              {r.last_error && (
+                <p className="text-[11px] text-red-400 mt-1.5 break-all">{r.last_error}</p>
+              )}
+
+              {wiz && wiz.slot === r.slot && (
+                <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                  {wiz.step === 'phone' && (
+                    <div className="flex gap-2 flex-wrap">
+                      <input value={phone} onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+998901234567"
+                        className="flex-1 min-w-[180px] rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-xs text-white" />
+                      <button onClick={() => startWiz(r.slot)} disabled={busy}
+                        className="px-3 py-2 rounded-lg bg-[#00F5FF]/15 text-[#00F5FF] text-xs font-semibold disabled:opacity-50">
+                        Kod olish
+                      </button>
+                    </div>
+                  )}
+                  {wiz.step === 'code' && (
+                    <div className="flex gap-2 flex-wrap">
+                      <input value={code} onChange={(e) => setCode(e.target.value)}
+                        placeholder="Telegram kodi"
+                        className="flex-1 min-w-[180px] rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-xs text-white" />
+                      <button onClick={() => verifyWiz(r.slot)} disabled={busy}
+                        className="px-3 py-2 rounded-lg bg-[#00F5FF]/15 text-[#00F5FF] text-xs font-semibold disabled:opacity-50">
+                        Tasdiqlash
+                      </button>
+                    </div>
+                  )}
+                  {wiz.step === 'password' && (
+                    <div className="flex gap-2 flex-wrap">
+                      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                        placeholder="2FA parol"
+                        className="flex-1 min-w-[180px] rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-xs text-white" />
+                      <button onClick={() => passwordWiz(r.slot)} disabled={busy}
+                        className="px-3 py-2 rounded-lg bg-[#00F5FF]/15 text-[#00F5FF] text-xs font-semibold disabled:opacity-50">
+                        Kirish
+                      </button>
+                    </div>
+                  )}
+                  <button onClick={() => setWiz(null)} className="text-[11px] text-[#64748B] hover:text-white">
+                    Bekor qilish
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 }

@@ -47,6 +47,28 @@ GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 TIMEOUT_SECONDS = 25
 MAX_ANSWER = 3800
 
+
+def _trim_to_sentence(text: str, limit: int) -> str:
+    """Cut `text` to at most `limit` chars WITHOUT breaking a word/sentence.
+
+    The proactive/roast messages used a raw `text[:600]` which chopped the
+    last sentence mid-word ("...to'g'ril"). This trims at the last sentence
+    end (. ! ? … or newline) before the limit; if there is none, at the last
+    space; only as a last resort does it hard-cut and add an ellipsis.
+    """
+    text = (text or '').strip()
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    for sep in ('. ', '! ', '? ', '…', '\n'):
+        idx = window.rfind(sep)
+        if idx >= limit * 0.5:
+            return window[:idx + len(sep)].strip()
+    idx = window.rfind(' ')
+    if idx >= limit * 0.5:
+        return window[:idx].rstrip() + '…'
+    return window.rstrip() + '…'
+
 # Throttle: har bir staff a'zosi uchun daqiqada 6 ta so'rov.
 THROTTLE_LIMIT = 6
 THROTTLE_WINDOW = 60
@@ -1738,8 +1760,12 @@ def _call_gemini(prompt: str) -> dict:
     try:
         s = _get_settings()
         from .gemini_client import chat as _gemini_chat
+        # thinking_budget=0: "flash" modellari o'ylash tokenlarini javob
+        # byudjetidan yeb, gapni o'rtasida uzardi ("gapi oxiriga yetmay
+        # qolardi"). O'chirilgan — javob to'liq va tez chiqadi.
         res = _gemini_chat(prompt, configured_model=s.get('gemini_model'), temperature=0.4,
-                           max_tokens=1024, api_key=s.get('gemini_api_key'))
+                           max_tokens=2000, api_key=s.get('gemini_api_key'),
+                           thinking_budget=0)
         if res['ok']:
             return {'ok': True, 'answer': (res['answer'] or '').strip()[:MAX_ANSWER]}
         return {'ok': False, 'answer': res.get('answer', 'AI hozircha javob bera olmadi.')}
@@ -2123,7 +2149,7 @@ def proactive_message(target_username: str, mock: bool = False) -> dict:
         result = _call_gemini(prompt)
         if not result.get('ok') or not result.get('answer'):
             return {'ok': False, 'answer': ''}
-        answer = result['answer'][:600]
+        answer = _trim_to_sentence(result['answer'], 900)
         # Agar masxara bo'lsa — hazilni tarixga yozamiz (takrorlanmaslik uchun)
         if mock and answer:
             try:
@@ -2255,7 +2281,7 @@ def marketing_reply(text: str, chat_title: str = '', context_lines: str = '',
             try:
                 result = _call_gemini(prompt)
                 if result.get('ok') and result.get('answer'):
-                    return {'ok': True, 'answer': result['answer'][:600]}
+                    return {'ok': True, 'answer': _trim_to_sentence(result['answer'], 900)}
             except Exception:
                 pass  # Gemini xatosi → tayyor fallback qatorga o'tamiz
         import random as _random

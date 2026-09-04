@@ -305,27 +305,34 @@ def create_topup_request(user, balance_tx, requested_amount: Decimal, timeout_mi
     # space is exhausted (e.g. offset 0, or hundreds of identical pending
     # requests for one nominal amount), raise so the caller falls back to
     # admin approval instead of risking a wrong-user credit.
-    unique = None
-    for _ in range(50):
-        candidate = generate_unique_amount(requested_amount, offset_max)
-        if not CardTopupRequest.objects.filter(
-            unique_amount=candidate, status='pending',
-        ).exists():
-            unique = candidate
-            break
-    if unique is None:
-        raise ValueError(
-            f"unique amount space exhausted for {requested_amount} (offset {offset_max})"
-        )
+    # Serialize the pick+insert so two concurrent requests for the same nominal
+    # cannot both pass the "is this amount free?" check and create a duplicate
+    # pending row (TOCTOU). The lock is on existing pending rows for this
+    # amount; combined with the retry it makes a collision practically
+    # impossible, and the message matcher still refuses to auto-credit if one
+    # ever slips through.
+    with transaction.atomic():
+        unique = None
+        for _ in range(50):
+            candidate = generate_unique_amount(requested_amount, offset_max)
+            if not CardTopupRequest.objects.select_for_update().filter(
+                unique_amount=candidate, status='pending',
+            ).exists():
+                unique = candidate
+                break
+        if unique is None:
+            raise ValueError(
+                f"unique amount space exhausted for {requested_amount} (offset {offset_max})"
+            )
 
-    return CardTopupRequest.objects.create(
-        user=user,
-        balance_tx=balance_tx,
-        requested_amount=requested_amount,
-        unique_amount=unique,
-        expires_at=timezone.now() + timedelta(minutes=timeout_minutes),
-        status='pending',
-    )
+        return CardTopupRequest.objects.create(
+            user=user,
+            balance_tx=balance_tx,
+            requested_amount=requested_amount,
+            unique_amount=unique,
+            expires_at=timezone.now() + timedelta(minutes=timeout_minutes),
+            status='pending',
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -366,12 +373,43 @@ def consume_payment_message(chat_id, message_id, text, sender_id=None) -> dict:
         return {'ok': False, 'outcome': 'no_match'}
 
     # 2) Find the pending request whose unique_amount is among the candidates.
+    #    create_topup_request() guarantees at most one PENDING row per
+    #    unique_amount, but a rare TOCTOU race (two requests for the same
+    #    nominal created concurrently) could still produce a duplicate. If that
+    #    ever happens we must NOT guess which user to credit — hand it to a
+    #    human instead of auto-crediting the oldest.
     req = None
     for a in amounts:
-        req = CardTopupRequest.objects.filter(
-            unique_amount=Decimal(a), status='pending',
-        ).order_by('created_at').first()
-        if req:
+        matches = list(
+            CardTopupRequest.objects.filter(
+                unique_amount=Decimal(a), status='pending',
+            ).order_by('created_at')[:2]
+        )
+        if len(matches) > 1:
+            sp = SuspiciousPayment.objects.create(
+                message=msg,
+                user=matches[0].user,
+                amount=Decimal(a),
+                topup_request=matches[0],
+                status='pending',
+                note=(
+                    f"{len(matches)}+ ta kutilayotgan so'rov bir xil summada "
+                    f"({a} so'm) — qaysi mijozga tegishli ekani noaniq, qo'lda tekshirish kerak"
+                ),
+            )
+            msg.outcome = 'suspicious'
+            msg.save(update_fields=['outcome'])
+            _send_report(_suspicious_report_text(sp, matches[0], s))
+            try:
+                from apps.users.telegram_notify import notify_staff_suspicious_payment
+                notify_staff_suspicious_payment(sp)
+            except Exception:
+                logger.exception('staff suspicious notify failed')
+            return {'ok': True, 'outcome': 'suspicious', 'amount': str(a),
+                    'suspicious_id': sp.id, 'request_id': matches[0].id,
+                    'reason': 'ambiguous_amount'}
+        if matches:
+            req = matches[0]
             break
 
     if req is None:

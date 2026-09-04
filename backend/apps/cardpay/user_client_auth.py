@@ -42,6 +42,38 @@ SESSION_FILE = os.path.join(SESSION_DIR, 'donzo_user.session')
 # signs into the temp file, then on success copies it over SESSION_FILE.
 LOGIN_SESSION_FILE = os.path.join(SESSION_DIR, 'donzo_user_login.session')
 
+
+# ── Multi-account (slot) helpers ──────────────────────────────────────────
+# Slot 1 = the legacy monitor: files + Setting keys exactly as before, so
+# nothing about the existing client changes. Slot >= 2 = an extra
+# UserClientAccount row, with per-slot session files and login-state keys.
+def _is_legacy_slot(slot) -> bool:
+    return int(slot or 1) == 1
+
+
+def _slot_session_files(slot):
+    """(worker_session_file, login_wizard_session_file) for a slot."""
+    if _is_legacy_slot(slot):
+        return SESSION_FILE, LOGIN_SESSION_FILE
+    s = int(slot)
+    return (
+        os.path.join(SESSION_DIR, f'donzo_user_{s}.session'),
+        os.path.join(SESSION_DIR, f'donzo_user_login_{s}.session'),
+    )
+
+
+def _slot_state_keys(slot):
+    """The 4 short-lived login-wizard Setting keys for a slot."""
+    if _is_legacy_slot(slot):
+        return _KC_PHONE, _KC_HASH, _KC_2FA, _KC_TS
+    s = int(slot)
+    return (f'{_KC_PHONE}_{s}', f'{_KC_HASH}_{s}', f'{_KC_2FA}_{s}', f'{_KC_TS}_{s}')
+
+
+def _slot_restart_flag(slot):
+    name = '.restart_requested' if _is_legacy_slot(slot) else f'.restart_requested_{int(slot)}'
+    return os.path.join(BASE_DIR, 'sessions', name)
+
 # Login wizard state is stored in the DB (Setting), NOT in memory:
 # daphne runs several worker processes in the cloud, each with its own
 # memory — a phone/code_hash written by one worker would be invisible to
@@ -60,7 +92,7 @@ _PHONE_CODE_HASH = ''
 _NEEDS_PASSWORD = False
 
 
-def _get_login_state():
+def _get_login_state(slot=1):
     """Read the pending login wizard state (DB-backed, cross-worker).
 
     Reads STRAIGHT from the DB, never from the Setting TTL cache: daphne
@@ -70,39 +102,57 @@ def _get_login_state():
 tekshirilmadi". A direct .objects query always sees the fresh row.
     """
     from apps.settings_app.models import Setting
+    k_phone, k_hash, k_2fa, k_ts = _slot_state_keys(slot)
     rows = dict(Setting.objects.filter(
-        key__in=(_KC_PHONE, _KC_HASH, _KC_2FA, _KC_TS)
+        key__in=(k_phone, k_hash, k_2fa, k_ts)
     ).values_list('key', 'value'))
-    phone = rows.get(_KC_PHONE) or ''
-    code_hash = rows.get(_KC_HASH) or ''
-    needs_2fa = (rows.get(_KC_2FA) or '').lower() == 'true'
-    ts_raw = rows.get(_KC_TS) or ''
+    phone = rows.get(k_phone) or ''
+    code_hash = rows.get(k_hash) or ''
+    needs_2fa = (rows.get(k_2fa) or '').lower() == 'true'
+    ts_raw = rows.get(k_ts) or ''
     try:
         ts = float(ts_raw)
         if time.time() - ts > _LOGIN_TTL_SECONDS:
-            _clear_login_state()
+            _clear_login_state(slot)
             return '', '', False
     except (TypeError, ValueError):
         pass
     return phone, code_hash, needs_2fa
 
 
-def _set_login_state(phone, code_hash='', needs_2fa=False):
+def _set_login_state(phone, code_hash='', needs_2fa=False, slot=1):
     """Persist the login wizard state so any daphne worker can continue."""
     from apps.settings_app.models import Setting
-    Setting.set_setting(_KC_PHONE, phone or '')
-    Setting.set_setting(_KC_HASH, code_hash or '')
-    Setting.set_setting(_KC_2FA, 'true' if needs_2fa else 'false')
-    Setting.set_setting(_KC_TS, str(time.time()))
+    k_phone, k_hash, k_2fa, k_ts = _slot_state_keys(slot)
+    Setting.set_setting(k_phone, phone or '')
+    Setting.set_setting(k_hash, code_hash or '')
+    Setting.set_setting(k_2fa, 'true' if needs_2fa else 'false')
+    Setting.set_setting(k_ts, str(time.time()))
 
 
-def _clear_login_state():
+def _clear_login_state(slot=1):
     from apps.settings_app.models import Setting
-    for key in (_KC_PHONE, _KC_HASH, _KC_2FA, _KC_TS):
+    for key in _slot_state_keys(slot):
         Setting.set_setting(key, '')
 
 
-def _sync_session_to_db(session_file=None):
+def _store_session_b64(b64: str, slot=1) -> bool:
+    """Persist the session bytes to the right place for this slot and confirm."""
+    if _is_legacy_slot(slot):
+        from apps.settings_app.models import Setting
+        Setting.set_setting('user_client_session_b64', b64)
+        check = Setting.get_setting('user_client_session_b64', '') or ''
+        return check == b64
+    from apps.cardpay.models import UserClientAccount
+    UserClientAccount.objects.update_or_create(
+        slot=int(slot),
+        defaults={'session_b64': b64, 'authorized': True},
+    )
+    row = UserClientAccount.objects.filter(slot=int(slot)).first()
+    return bool(row and row.session_b64 == b64)
+
+
+def _sync_session_to_db(session_file=None, slot=1):
     """Muvaffaqiyatli kirishdan keyin sessiyani Neon DB'ga saqlaydi.
 
     Cloud deploy'da launcher sessiyani Neon'dan tiklaydi — yangi yozilgan
@@ -110,52 +160,48 @@ def _sync_session_to_db(session_file=None):
     qaytadi. Bu funksiya har muvaffaqiyatli login'da shu muammoni yopadi.
     """
     try:
-        path = session_file or SESSION_FILE
+        path = session_file or _slot_session_files(slot)[0]
         if not os.path.exists(path):
             logger.warning('_sync_session_to_db: sessiya fayli yo\'q: %s', path)
             return False
         with open(path, 'rb') as f:
             b64 = base64.b64encode(f.read()).decode('ascii')
-        from apps.settings_app.models import Setting
-        Setting.set_setting('user_client_session_b64', b64)
-        # Qayta o'qib tasdiqlaymiz — yozilganini isbotlash (yashirin xatolarni
-        # bartaraf qilish uchun).
-        check = Setting.get_setting('user_client_session_b64', '') or ''
-        if check == b64:
-            logger.info('Sessiya Neon DB\'ga sinxronlandi va tasdiqlandi (%s belgi)', len(b64))
+        if _store_session_b64(b64, slot):
+            logger.info('Sessiya Neon DB\'ga sinxronlandi va tasdiqlandi (slot=%s, %s belgi)', slot, len(b64))
             return True
-        logger.error('_sync_session_to_db: yozilgan qiymat tasdiqlanmadi (len=%s vs %s)', len(check), len(b64))
+        logger.error('_sync_session_to_db: yozilgan qiymat tasdiqlanmadi (slot=%s)', slot)
         return False
     except Exception as exc:
         logger.error('_sync_session_to_db XATO: %s: %s', type(exc).__name__, str(exc)[:200])
         return False
 
 
-def _promote_login_session():
+def _promote_login_session(slot=1):
     """Login wizard muvaffaqiyatli bo'lgach temp sessiyani asosiy faylga
     ko'chiradi (va Neon DB'ga yozadi). Worker keyingi restartda yangi
     sessiyani oladi.
     """
+    session_file, login_file = _slot_session_files(slot)
     try:
-        if not os.path.exists(LOGIN_SESSION_FILE):
-            logger.warning('_promote_login_session: LOGIN_SESSION_FILE yo\'q — kirish yakunlanmagan')
+        if not os.path.exists(login_file):
+            logger.warning('_promote_login_session: login sessiya fayli yo\'q — kirish yakunlanmagan')
             return False
-        tmp = SESSION_FILE + '.new'
-        with open(LOGIN_SESSION_FILE, 'rb') as f:
+        tmp = session_file + '.new'
+        with open(login_file, 'rb') as f:
             data = f.read()
         with open(tmp, 'wb') as f:
             f.write(data)
-        os.replace(tmp, SESSION_FILE)
-        ok = _sync_session_to_db(SESSION_FILE)
-        logger.info('Login sessiyasi asosiy sessiya fayliga ko\'chirildi (Neon sync=%s)', ok)
+        os.replace(tmp, session_file)
+        ok = _sync_session_to_db(session_file, slot)
+        logger.info('Login sessiyasi asosiy sessiya fayliga ko\'chirildi (slot=%s, Neon sync=%s)', slot, ok)
         return ok
     except Exception as exc:
         logger.warning('sessiyani ko\'chirishda xato: %s: %s', type(exc).__name__, str(exc)[:200])
         return False
     finally:
         try:
-            if os.path.exists(LOGIN_SESSION_FILE):
-                os.remove(LOGIN_SESSION_FILE)
+            if os.path.exists(login_file):
+                os.remove(login_file)
         except Exception:
             pass
 
@@ -166,17 +212,30 @@ def _promote_login_session():
 OP_TIMEOUT = 60
 
 
-def _kill_worker_crossplatform() -> None:
-    """Kill running user_client.py worker processes (any OS).
+def _kill_worker_crossplatform(slot=1) -> None:
+    """Kill the running user_client.py worker for ONE slot (any OS).
 
     Windows → PowerShell CIM; Linux/macOS → pkill. The cloud launcher
     auto-restarts the worker after a successful login.
+
+    Slot 1 = the legacy worker (command line has no --slot). Slot >= 2 =
+    the worker started with `--slot N`. Killing is slot-scoped so logging
+    into an extra account never bounces the production (slot 1) monitor.
     """
+    if _is_legacy_slot(slot):
+        # legacy worker: `python user_client.py` with NO --slot argument.
+        # pkill -f has no lookahead, so anchor on end-of-cmdline instead.
+        win_match = "$_.CommandLine -match 'user_client\\.py' -and $_.CommandLine -notmatch '--slot' -and $_.CommandLine -notmatch 'supervisor'"
+        nix_pattern = r'user_client\.py\s*$'
+    else:
+        s = int(slot)
+        win_match = f"$_.CommandLine -match 'user_client\\.py' -and $_.CommandLine -match '--slot[ =]{s}\\b'"
+        nix_pattern = rf'user_client\.py.*--slot[ =]{s}\b'
+
     if os.name == 'nt':
         ps = (
             "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.CommandLine -match 'user_client\\.py' -and "
-            "$_.CommandLine -notmatch 'supervisor' } | "
+            f"Where-Object {{ {win_match} }} | "
             "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; "
             "Write-Output $_.ProcessId }"
         )
@@ -191,14 +250,14 @@ def _kill_worker_crossplatform() -> None:
         for line in out.splitlines():
             line = line.strip()
             if line.isdigit():
-                logger.info('user_client worker killed (pid %s)', line)
+                logger.info('user_client worker killed (slot %s, pid %s)', slot, line)
     else:
         try:
             subprocess.run(
-                ['pkill', '-f', 'user_client\.py'],
+                ['pkill', '-f', nix_pattern],
                 capture_output=True, text=True, timeout=15,
             )
-            logger.info('user_client worker pkill yuborildi (cloud)')
+            logger.info('user_client worker pkill yuborildi (slot %s, cloud)', slot)
         except Exception as exc:
             logger.warning('kill worker (pkill) failed: %s', exc)
 
@@ -267,8 +326,8 @@ async def _make_client(session_file=None):
     DB (Settings) — reading them inside a running event loop must go
     through sync_to_async, otherwise Django raises SynchronousOnlyOperation.
 
-    session_file=None → the worker session (SESSION_FILE). Pass
-    LOGIN_SESSION_FILE during the login wizard so a concurrent worker can
+    session_file=None → the slot-1 worker session (SESSION_FILE). Pass the
+    login-wizard file for the relevant slot so a concurrent worker can
     never lock the file the wizard is writing.
     """
     from asgiref.sync import sync_to_async
@@ -290,8 +349,42 @@ async def _make_client(session_file=None):
 
 # ── status ────────────────────────────────────────────────────────────────
 
-def get_status() -> dict:
+def _status_slot_n(slot: int) -> dict:
+    """Status for an extra account (slot >= 2), read from its DB row."""
+    from apps.cardpay.models import UserClientAccount
+    row = UserClientAccount.objects.filter(slot=int(slot)).first()
+    db_phone, _h, _f = _get_login_state(slot)
+    if row is None:
+        return {
+            'slot': int(slot), 'exists': False, 'authorized': False,
+            'credentials': True, 'worker_online': False, 'enabled': False,
+            'phone': db_phone, 'username': '', 'login_pending': bool(db_phone),
+        }
+    return {
+        'slot': row.slot,
+        'exists': True,
+        'label': row.label,
+        'enabled': row.enabled,
+        'authorized': row.authorized,
+        'credentials': True,
+        'session_exists': bool(row.session_b64),
+        'worker_online': row.online,
+        'last_heartbeat': row.last_heartbeat.isoformat() if row.last_heartbeat else None,
+        'restarts': row.restarts,
+        'last_error': row.last_error,
+        'last_error_ts': row.last_error_at.isoformat() if row.last_error_at else None,
+        'phone': row.phone or db_phone,
+        'username': row.username,
+        'first_name': row.first_name,
+        'user_id': row.tg_user_id,
+        'login_pending': bool(db_phone),
+    }
+
+
+def get_status(slot=1) -> dict:
     """Authorized? phone/username? worker online? (no secrets)."""
+    if not _is_legacy_slot(slot):
+        return _status_slot_n(int(slot))
     import json
     from datetime import datetime, timezone
     from pathlib import Path
@@ -402,22 +495,24 @@ def get_status() -> dict:
 
 # ── login flow ────────────────────────────────────────────────────────────
 
-def start_phone(phone: str) -> dict:
+def start_phone(phone: str, slot=1) -> dict:
     """Send the Telegram login code to the given phone. Returns ok / detail."""
     phone = (phone or '').strip()
     if not re.match(r'^\+?[0-9]{7,15}$', phone):
         return {'ok': False, 'detail': "Telefon raqam noto'g'ri formatda (masalan +998901234567)"}
 
+    _worker_session, login_file = _slot_session_files(slot)
+
     # Yangi login boshlanmoqda — eski temp sessiyani tozalaymiz (agar
     # avvalgi urinish chala qolgan bo'lsa).
     try:
-        if os.path.exists(LOGIN_SESSION_FILE):
-            os.remove(LOGIN_SESSION_FILE)
+        if os.path.exists(login_file):
+            os.remove(login_file)
     except Exception:
         pass
 
     async def _start():
-        client, api_id = await _make_client(LOGIN_SESSION_FILE)
+        client, api_id = await _make_client(login_file)
         if client is None:
             return {'ok': False, 'detail': 'telegram_api_id / telegram_api_hash sozlanmagan (Kalitlar)'}
         await client.connect()
@@ -444,15 +539,16 @@ def start_phone(phone: str) -> dict:
     if not result.get('ok'):
         return result
 
-    _set_login_state(phone, result.get('phone_code_hash', ''), False)
+    _set_login_state(phone, result.get('phone_code_hash', ''), False, slot=slot)
     return {'ok': True, 'detail': 'Tasdiqlash kodi Telegram/SMS orqali yuborildi. Kodni kiriting.'}
 
 
-def verify_code(code: str) -> dict:
+def verify_code(code: str, slot=1) -> dict:
     """Sign in with the code. Returns ok / needs_password / error."""
     code = (code or '').strip()
 
-    phone, phone_code_hash, _needs_2fa = _get_login_state()
+    phone, phone_code_hash, _needs_2fa = _get_login_state(slot)
+    _worker_session, login_file = _slot_session_files(slot)
 
     if not phone:
         return {'ok': False, 'detail': 'Avval telefon raqamni kiriting va "Kod olish"ni bosing.'}
@@ -460,7 +556,7 @@ def verify_code(code: str) -> dict:
         return {'ok': False, 'detail': 'Kod kiritilmadi.'}
 
     async def _verify():
-        client, _ = await _make_client(LOGIN_SESSION_FILE)
+        client, _ = await _make_client(login_file)
         if client is None:
             return {'ok': False, 'detail': 'Kalitlar sozlanmagan'}
         await client.connect()
@@ -478,7 +574,7 @@ def verify_code(code: str) -> dict:
     except Exception as exc:
         from telethon.errors import SessionPasswordNeededError
         if isinstance(exc, SessionPasswordNeededError):
-            _set_login_state(phone, phone_code_hash, True)
+            _set_login_state(phone, phone_code_hash, True, slot=slot)
             return {'ok': False, 'needs_password': True,
                     'detail': 'Akkauntda ikki bosqichli himoya (2FA) yoqilgan — parolni kiriting.'}
         err = type(exc).__name__.lower()
@@ -492,24 +588,26 @@ def verify_code(code: str) -> dict:
         return {'ok': False, 'detail': f"Kirish amalga oshmadi ({type(exc).__name__})"}
 
     if result.get('ok'):
-        _clear_login_state()
-        synced = _promote_login_session()
+        _clear_login_state(slot)
+        synced = _promote_login_session(slot)
         if not synced:
             logger.error('KIRISH MUVaffaqiyatli LEKIN Neon\'ga saqlanmadi — worker eski sessiyada qoladi!')
-        _restart_worker()
+        _record_account_identity(slot, phone, result)
+        _restart_worker(slot)
     return result
 
 
-def verify_password(password: str) -> dict:
+def verify_password(password: str, slot=1) -> dict:
     """Second step for 2FA-enabled accounts."""
     password = password or ''
 
-    phone, phone_code_hash, needs_2fa = _get_login_state()
+    phone, phone_code_hash, needs_2fa = _get_login_state(slot)
+    _worker_session, login_file = _slot_session_files(slot)
     if not needs_2fa:
         return {'ok': False, 'detail': 'Parol so‘ralmagan. Avval kod bilan kirishni boshlang.'}
 
     async def _do():
-        client, _ = await _make_client(LOGIN_SESSION_FILE)
+        client, _ = await _make_client(login_file)
         if client is None:
             return {'ok': False, 'detail': 'Kalitlar sozlanmagan'}
         await client.connect()
@@ -532,11 +630,12 @@ def verify_password(password: str) -> dict:
         return {'ok': False, 'detail': f"Parol qabul qilinmadi ({type(exc).__name__})"}
 
     if result.get('ok'):
-        _clear_login_state()
-        synced = _promote_login_session()
+        _clear_login_state(slot)
+        synced = _promote_login_session(slot)
         if not synced:
             logger.error('2FA KIRISH MUVaffaqiyatli LEKIN Neon\'ga saqlanmadi — worker eski sessiyada qoladi!')
-        _restart_worker()
+        _record_account_identity(slot, phone, result)
+        _restart_worker(slot)
     return result
 
 
@@ -600,11 +699,32 @@ def read_supervisor_log(n: int = 40) -> list:
         return []
 
 
-def logout() -> dict:
+def _record_account_identity(slot, phone, result: dict) -> None:
+    """Save username/first_name/phone onto the UserClientAccount row (slot >= 2)."""
+    if _is_legacy_slot(slot):
+        return
+    try:
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.update_or_create(
+            slot=int(slot),
+            defaults={
+                'authorized': True,
+                'phone': phone or '',
+                'username': result.get('username') or '',
+                'first_name': result.get('first_name') or '',
+                'tg_user_id': str(result.get('user_id') or ''),
+            },
+        )
+    except Exception as exc:
+        logger.warning('account identity yozilmadi (slot %s): %s', slot, exc)
+
+
+def logout(slot=1) -> dict:
     """Delete the session file + stop the running worker (supervisor restarts)."""
     removed = False
+    worker_session, login_file = _slot_session_files(slot)
     try:
-        for base in (SESSION_FILE, LOGIN_SESSION_FILE):
+        for base in (worker_session, login_file):
             for suffix in ('', '.session'):
                 p = base + ('' if suffix == '' else suffix)
                 if os.path.exists(p):
@@ -612,30 +732,79 @@ def logout() -> dict:
                     removed = True
     except Exception as exc:
         logger.warning('session delete failed: %s', exc)
-    _clear_login_state()
-    _kill_worker_crossplatform()
+    _clear_login_state(slot)
+    if not _is_legacy_slot(slot):
+        try:
+            from apps.cardpay.models import UserClientAccount
+            UserClientAccount.objects.filter(slot=int(slot)).update(
+                session_b64='', authorized=False, username='', first_name='',
+                tg_user_id='', last_error='', last_heartbeat=None,
+            )
+        except Exception:
+            pass
+    _kill_worker_crossplatform(slot)
     return {'ok': True, 'removed': removed,
             'detail': 'Session o‘chirildi. Endi boshqa akkaunt bilan kirishingiz mumkin.'}
 
 
+# ── extra-account CRUD (slot >= 2) ────────────────────────────────────────
+
+def list_accounts() -> dict:
+    """Slot 1 (legacy) status + every extra UserClientAccount row."""
+    from apps.cardpay.models import UserClientAccount
+    slot1 = get_status(1)
+    slot1['slot'] = 1
+    slot1['legacy'] = True
+    extras = [_status_slot_n(r.slot) for r in UserClientAccount.objects.all()]
+    return {'accounts': [slot1] + extras}
+
+
+def create_account(label: str = '') -> dict:
+    from apps.cardpay.models import UserClientAccount
+    slot = UserClientAccount.next_free_slot()
+    UserClientAccount.objects.create(slot=slot, label=(label or f'Client #{slot}')[:80])
+    return {'ok': True, 'slot': slot}
+
+
+def delete_account(slot: int) -> dict:
+    if _is_legacy_slot(slot):
+        return {'ok': False, 'detail': 'Slot 1 (asosiy) o‘chirilmaydi — u eski tizim.'}
+    from apps.cardpay.models import UserClientAccount
+    logout(slot)  # wipe session + stop worker
+    UserClientAccount.objects.filter(slot=int(slot)).delete()
+    return {'ok': True}
+
+
+def set_enabled(slot: int, enabled: bool) -> dict:
+    if _is_legacy_slot(slot):
+        return {'ok': False, 'detail': 'Slot 1 doim yoqilgan.'}
+    from apps.cardpay.models import UserClientAccount
+    UserClientAccount.objects.filter(slot=int(slot)).update(enabled=bool(enabled))
+    if not enabled:
+        _kill_worker_crossplatform(slot)
+    else:
+        _restart_worker(slot)
+    return {'ok': True, 'enabled': bool(enabled)}
+
+
 # ── worker (supervisor) integration ───────────────────────────────────────
 
-def _kill_worker() -> None:
-    """Cross-platform kill of user_client.py worker processes."""
-    _kill_worker_crossplatform()
+def _kill_worker(slot=1) -> None:
+    """Cross-platform kill of the user_client.py worker for one slot."""
+    _kill_worker_crossplatform(slot)
 
 
-def _restart_worker() -> None:
+def _restart_worker(slot=1) -> None:
     """After a successful login, restart the worker so it picks up the new
     session immediately (the supervisor auto-restarts it within ~5s)."""
-    _kill_worker_crossplatform()
+    _kill_worker_crossplatform(slot)
     # Cloud (Linux): cloud_launcher rc=5 holatida 300s kutar edi. Flag fayl
     # yaratamiz — launcher buni ko'rib darhol qayta ishga tushiradi.
     try:
-        flag = os.path.join(BASE_DIR, 'sessions', '.restart_requested')
+        flag = _slot_restart_flag(slot)
         os.makedirs(os.path.dirname(flag), exist_ok=True)
         with open(flag, 'w') as f:
             f.write(str(time.time()))
-        logger.info('worker restart flag yaratildi (cloud launcher uchun)')
+        logger.info('worker restart flag yaratildi (slot %s, cloud launcher uchun)', slot)
     except Exception as exc:
         logger.warning('restart flag yozilmadi: %s', exc)

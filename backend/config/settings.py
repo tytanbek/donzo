@@ -26,7 +26,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # ── Security: Debug Mode ──
-DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+# Secure by default: DEBUG is OFF unless explicitly enabled with DEBUG=True.
+# A missing/typo'd env var must never silently open CORS, expose the API
+# schema, or disable HTTPS in a deployment. Local dev sets DEBUG=True in
+# backend/.env (see .env.example).
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 # Hard-fail in production when the default dev secret key is used — a known
 # SECRET_KEY lets anyone forge JWT tokens and sessions (full account takeover).
@@ -201,6 +205,23 @@ if os.getenv('DATABASE_URL'):
         'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'require')},
     }
 
+# ── Guard: no accidental SQLite in production ──
+# SQLite on a hardened single-shop deploy is supported ON PURPOSE, but four
+# processes (daphne, bot, user_client, cron scripts) sharing one file leads to
+# "database is locked" under load. Require an explicit opt-in so it can never
+# happen by forgetting to set DATABASE_URL / DB_NAME on a real server.
+if (
+    not DEBUG
+    and not TESTING
+    and DATABASES['default']['ENGINE'].endswith('sqlite3')
+    and os.getenv('ALLOW_SQLITE_PROD', '').lower() != 'true'
+):
+    raise RuntimeError(
+        "Refusing to run with DEBUG=False on SQLite. Set DATABASE_URL (or DB_* "
+        "vars) to a PostgreSQL database, or set ALLOW_SQLITE_PROD=true if a "
+        "single-file DB is a deliberate choice for this small deployment."
+    )
+
 AUTH_USER_MODEL = 'users.User'
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -293,11 +314,25 @@ SIMPLE_JWT = {
 # ── Channels / WebSocket ──
 ASGI_APPLICATION = 'config.asgi.application'
 
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
+# InMemoryChannelLayer only reaches consumers inside the SAME process — the
+# moment daphne runs more than one worker (or a management command / bot needs
+# to push to sockets) group_send is silently dropped. When REDIS_URL is set we
+# use a real cross-process layer; without it we keep the in-memory layer so a
+# single-process dev run needs no Redis.
+REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDIS_TLS_URL') or os.getenv('CHANNELS_REDIS_URL')
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [REDIS_URL], 'capacity': 1500, 'expiry': 10},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 # Swagger
 SWAGGER_SETTINGS = {

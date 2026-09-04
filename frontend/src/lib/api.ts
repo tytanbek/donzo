@@ -388,17 +388,26 @@ export const cardpayAPI = {
     api.post(`/admin/cardpay/suspicious/${id}/reject/`, { note }),
   status: () => api.get('/admin/cardpay/status/'),
   settingsSave: (data: any) => api.put('/admin/cardpay/settings/', data),
-  // User client (Telethon) — admin paneldan Telegram akkauntga kirish
-  userClientStatus: () => api.get('/admin/cardpay/userclient/status/'),
-  userClientStart: (phone: string) => api.post('/admin/cardpay/userclient/start/', { phone }),
-  userClientVerify: (code: string) => api.post('/admin/cardpay/userclient/verify/', { code }),
-  userClientPassword: (password: string) =>
-    api.post('/admin/cardpay/userclient/password/', { password }),
-  userClientLogout: () => api.post('/admin/cardpay/userclient/logout/', {}),
+  // User client (Telethon) — admin paneldan Telegram akkauntga kirish.
+  // slot: 1 (default) = asosiy monitor; 2+ = qo'shimcha zaxira akkauntlar.
+  userClientStatus: (slot = 1) => api.get('/admin/cardpay/userclient/status/', { params: { slot } }),
+  userClientStart: (phone: string, slot = 1) =>
+    api.post('/admin/cardpay/userclient/start/', { phone, slot }),
+  userClientVerify: (code: string, slot = 1) =>
+    api.post('/admin/cardpay/userclient/verify/', { code, slot }),
+  userClientPassword: (password: string, slot = 1) =>
+    api.post('/admin/cardpay/userclient/password/', { password, slot }),
+  userClientLogout: (slot = 1) => api.post('/admin/cardpay/userclient/logout/', { slot }),
+  // Bir nechta monitor akkaunt boshqaruvi
+  userClients: () => api.get('/admin/cardpay/userclients/'),
+  userClientCreate: (label?: string) => api.post('/admin/cardpay/userclients/', { label }),
+  userClientSetEnabled: (slot: number, enabled: boolean) =>
+    api.patch(`/admin/cardpay/userclients/${slot}/`, { enabled }),
+  userClientRemove: (slot: number) => api.delete(`/admin/cardpay/userclients/${slot}/`),
   // User Client boshqaruv sahifasi uchun
   userClientDetail: () => api.get('/admin/cardpay/userclient/detail/'),
   userClientMonitorCheck: () => api.post('/admin/cardpay/userclient/monitor-check/', {}),
-  userClientRestart: () => api.post('/admin/cardpay/userclient/restart/', {}),
+  userClientRestart: (slot = 1) => api.post('/admin/cardpay/userclient/restart/', { slot }),
   userClientApiKeys: (data?: any) =>
     data ? api.put('/admin/cardpay/userclient/api-keys/', data) : api.get('/admin/cardpay/userclient/api-keys/'),
 };

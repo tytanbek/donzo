@@ -104,11 +104,18 @@ def _post(url: str, body: dict, timeout: int = 45) -> tuple:
 
 
 def chat(prompt: str, configured_model: str = None, temperature: float = 0.4,
-         max_tokens: int = 1024, timeout: int = 45, api_key: str = None) -> dict:
+         max_tokens: int = 2048, timeout: int = 45, api_key: str = None,
+         thinking_budget: int = 0) -> dict:
     """Matn so'rovi — rotatsiya bilan. Returns {'ok', 'answer', 'model'}.
 
     Hech qachon exception tashlamaydi. Barcha modellar xato bersa
     {'ok': False, 'answer': ...} qaytadi.
+
+    thinking_budget: Gemini 2.5+/3.x "flash" modellari standart holatda ichki
+    "o'ylash" tokenlarini sarflaydi va ular SHU maxOutputTokens byudjetidan
+    olinadi — natijada javob gap o'rtasida uzilib qoladi (finishReason=
+    MAX_TOKENS). 0 = o'ylashni o'chirish (suhbat javoblari uchun to'g'ri,
+    tez va uzilmaydi). None = modelning o'z qaroriga qoldirish.
     """
     if not prompt or not prompt.strip():
         return {'ok': False, 'answer': 'Bo\'sh so\'rov'}
@@ -121,30 +128,92 @@ def chat(prompt: str, configured_model: str = None, temperature: float = 0.4,
             api_key = ''
     if not api_key:
         return {'ok': False, 'answer': 'Gemini API kaliti sozlanmagan (gemini_api_key)'}
+    def _gen_config(mtok, with_thinking):
+        cfg = {'temperature': temperature, 'maxOutputTokens': mtok}
+        if with_thinking and thinking_budget is not None:
+            cfg['thinkingConfig'] = {'thinkingBudget': thinking_budget}
+        return cfg
+
+    def _extract(raw):
+        """(text, finish_reason) — text may be '' if the model produced none."""
+        data = json.loads(raw)
+        cand = data['candidates'][0]
+        finish = cand.get('finishReason') or ''
+        parts = (cand.get('content') or {}).get('parts') or []
+        text = ''.join(p.get('text', '') for p in parts).strip()
+        return text, finish
+
     last_code = None
     last_name = None
     for model in _model_order(configured_model or 'gemini-3.6-flash'):
-        body = {
-            'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'temperature': temperature, 'maxOutputTokens': max_tokens},
-        }
         url = GEMINI_URL.format(model=model) + f'?key={api_key}'
-        try:
-            status, raw = _post(url, body, timeout=timeout)
-        except Exception as exc:
-            last_name = type(exc).__name__
-            logger.warning('Gemini %s call failed: %s', model, last_name)
-            continue
-        if status == 200:
+        # Per model, try up to 3 shots: thinking-off, then a bigger budget if
+        # the answer was cut (finishReason=MAX_TOKENS), then thinking-off is
+        # dropped only if the model itself rejects the field (400).
+        attempts = [
+            (max_tokens, True),
+            (max_tokens * 3, True),
+        ]
+        advanced = False
+        for mtok, with_thinking in attempts:
+            body = {
+                'contents': [{'parts': [{'text': prompt}]}],
+                'generationConfig': _gen_config(mtok, with_thinking),
+            }
             try:
-                data = json.loads(raw)
-                text = (data['candidates'][0]['content']['parts'][0]['text'] or '').strip()
-                if text:
+                status, raw = _post(url, body, timeout=timeout)
+            except Exception as exc:
+                last_name = type(exc).__name__
+                logger.warning('Gemini %s call failed: %s', model, last_name)
+                advanced = True  # move to next model
+                break
+            if status == 200:
+                try:
+                    text, finish = _extract(raw)
+                except (KeyError, IndexError, json.JSONDecodeError) as exc:
+                    logger.warning('Gemini %s unparseable response: %s', model, type(exc).__name__)
+                    advanced = True
+                    break
+                if text and finish != 'MAX_TOKENS':
                     return {'ok': True, 'answer': text, 'model': model}
-            except (KeyError, IndexError, json.JSONDecodeError) as exc:
-                logger.warning('Gemini %s unparseable response: %s', model, type(exc).__name__)
-                continue
-        elif status == 429:
+                if finish == 'MAX_TOKENS':
+                    # Cut off (usually thinking tokens ate the budget). Retry
+                    # this model once with a much larger budget; if we already
+                    # did, return whatever partial text we have rather than
+                    # nothing.
+                    logger.warning('Gemini %s javob uzildi (MAX_TOKENS, mtok=%s) — byudjet oshirib qayta', model, mtok)
+                    if mtok != max_tokens:
+                        if text:
+                            return {'ok': True, 'answer': text, 'model': model, 'truncated': True}
+                        advanced = True
+                    continue
+                # 200 but empty text and no MAX_TOKENS → try next model
+                advanced = True
+                break
+            if status == 400 and with_thinking and ('thinking' in (raw or '').lower()):
+                # This model does not accept thinkingConfig — retry without it.
+                logger.warning('Gemini %s thinkingConfig qabul qilmadi — o\'chirib qayta', model)
+                body['generationConfig'] = {'temperature': temperature, 'maxOutputTokens': mtok}
+                try:
+                    status, raw = _post(url, body, timeout=timeout)
+                    if status == 200:
+                        text, finish = _extract(raw)
+                        if text:
+                            return {'ok': True, 'answer': text, 'model': model,
+                                    'truncated': finish == 'MAX_TOKENS'}
+                except Exception:
+                    pass
+                advanced = True
+                break
+            # non-200 handled by the shared branch below
+            status_for_branch = status
+            break
+        else:
+            status_for_branch = None
+        if advanced or status_for_branch is None:
+            continue
+        status = status_for_branch
+        if status == 429:
             last_code = 429
             retry = _parse_retry_seconds(raw)
             _mark_quota(model, retry)

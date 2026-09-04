@@ -52,7 +52,37 @@ MONITOR_REFRESH_INTERVAL = 300  # re-resolve monitor entity every 5 min
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_DIR = os.path.join(BASE_DIR, 'sessions')
-SESSION_FILE = os.path.join(SESSION_DIR, 'donzo_user.session')
+
+# ── Multi-account support ──
+# Slot 1 = the original/legacy monitor: session file donzo_user.session,
+# session bytes mirrored to the Setting 'user_client_session_b64', stats in
+# user_client_stats. Its behaviour is unchanged.
+# Slot >= 2 = an EXTRA redundancy account backed by a UserClientAccount row:
+# session file donzo_user_<slot>.session, session bytes + heartbeat/errors
+# stored on the row. All slots watch the SAME monitor chat; the unique
+# (chat_id, message_id) guard means only the first to see a message credits
+# it, the rest get a harmless 'duplicate'.
+SLOT = int(os.getenv('USER_CLIENT_SLOT', '1') or '1')
+for _i, _a in enumerate(sys.argv):
+    if _a == '--slot' and _i + 1 < len(sys.argv):
+        try:
+            SLOT = int(sys.argv[_i + 1])
+        except ValueError:
+            pass
+    elif _a.startswith('--slot='):
+        try:
+            SLOT = int(_a.split('=', 1)[1])
+        except ValueError:
+            pass
+
+SESSION_FILE = os.path.join(
+    SESSION_DIR,
+    'donzo_user.session' if SLOT == 1 else f'donzo_user_{SLOT}.session',
+)
+
+
+def _is_legacy_slot() -> bool:
+    return SLOT == 1
 
 # Exit codes understood by the supervisor
 EXIT_NO_CREDENTIALS = 3
@@ -88,8 +118,13 @@ def _pull_session_from_db() -> bool:
     """
     try:
         import base64
-        from apps.settings_app.models import Setting
-        b64 = Setting.get_setting('user_client_session_b64', '') or ''
+        if _is_legacy_slot():
+            from apps.settings_app.models import Setting
+            b64 = Setting.get_setting('user_client_session_b64', '') or ''
+        else:
+            from apps.cardpay.models import UserClientAccount
+            row = UserClientAccount.objects.filter(slot=SLOT).first()
+            b64 = (row.session_b64 if row else '') or ''
         if not b64:
             return False
         data = base64.b64decode(b64)
@@ -118,8 +153,12 @@ def _sync_session_to_db():
             return
         with open(SESSION_FILE, 'rb') as f:
             b64 = base64.b64encode(f.read()).decode('ascii')
-        from apps.settings_app.models import Setting
-        Setting.set_setting('user_client_session_b64', b64)
+        if _is_legacy_slot():
+            from apps.settings_app.models import Setting
+            Setting.set_setting('user_client_session_b64', b64)
+        else:
+            from apps.cardpay.models import UserClientAccount
+            UserClientAccount.objects.filter(slot=SLOT).update(session_b64=b64)
         _log(f"Sessiya Neon DB'ga sinxronlandi ({len(b64)} belgi)")
     except Exception:
         pass  # sessiya sinxronlash hech qachon ishni buzmaydi
@@ -148,6 +187,57 @@ def _log(msg: str):
     try:
         with open(user_client_stats.SUPERVISOR_LOG, 'a', encoding='utf-8') as f:
             f.write(line + '\n')
+    except Exception:
+        pass
+
+
+def _stats_started(account: dict):
+    if _is_legacy_slot():
+        user_client_stats.mark_started(account)
+        return
+    try:
+        from django.utils import timezone
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.filter(slot=SLOT).update(
+            authorized=True,
+            username=account.get('username') or '',
+            tg_user_id=str(account.get('user_id') or ''),
+            first_name=account.get('first_name') or '',
+            phone=account.get('phone') or '',
+            last_heartbeat=timezone.now(),
+            last_error='',
+        )
+    except Exception:
+        pass
+
+
+def _stats_heartbeat():
+    if _is_legacy_slot():
+        user_client_stats.heartbeat()
+        return
+    try:
+        from django.utils import timezone
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.filter(slot=SLOT).update(last_heartbeat=timezone.now())
+    except Exception:
+        pass
+
+
+def _stats_event(kind: str):
+    if _is_legacy_slot():
+        user_client_stats.record_event(kind)
+
+
+def _stats_error(msg: str):
+    if _is_legacy_slot():
+        user_client_stats.record_error(msg)
+        return
+    try:
+        from django.utils import timezone
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.filter(slot=SLOT).update(
+            last_error=(msg or '')[:300], last_error_at=timezone.now(),
+        )
     except Exception:
         pass
 
@@ -206,7 +296,7 @@ async def main():
                    "Admin panel → To'lov nazorati → User Client orqali kirishni bajaring "
                    "(telefon raqam → kod → 2FA parol).")
             _log(msg)
-            user_client_stats.record_error(msg)
+            await sync_to_async(_stats_error)(msg)
             await client.disconnect()
             sys.exit(EXIT_NOT_AUTHORIZED)
 
@@ -216,13 +306,13 @@ async def main():
         msg = "XATO: Session topilmadi yoki ro'yxatdan o'tmagan. " \
               "Avval setup_user_client.py bilan kirishni bajaring."
         _log(msg)
-        user_client_stats.record_error(msg)
+        await sync_to_async(_stats_error)(msg)
         sys.exit(EXIT_NOT_AUTHORIZED)
 
-    _log(f"User client ishga tushdi: @{me.username or me.first_name} (id={me.id})")
+    _log(f"User client #{SLOT} ishga tushdi: @{me.username or me.first_name} (id={me.id})")
     # Yangi sessiyani Neon'ga saqlaymiz — cloud restart'da yo'qolmasligi uchun
     await sync_to_async(_sync_session_to_db)()
-    user_client_stats.mark_started({
+    await sync_to_async(_stats_started)({
         'username': getattr(me, 'username', None) or '',
         'first_name': getattr(me, 'first_name', None) or '',
         'user_id': getattr(me, 'id', None),
@@ -255,7 +345,7 @@ async def main():
     async def heartbeat_loop():
         while True:
             await asyncio.sleep(HEARTBEAT_INTERVAL)
-            user_client_stats.heartbeat()
+            await sync_to_async(_stats_heartbeat)()
             try:
                 await sync_to_async(cardpay_services.expire_stale_requests)()
             except Exception:
@@ -338,7 +428,7 @@ async def main():
         )
         outcome = result.get('outcome', '?')
         if outcome in ('matched', 'suspicious', 'held'):
-            user_client_stats.record_event(outcome if outcome != 'held' else 'suspicious')
+            _stats_event(outcome if outcome != 'held' else 'suspicious')
             _log(f"To'lov qayta ishlandi: {outcome} (msg {event.message.id})")
         elif outcome == 'no_match':
             _log(f"Xabar qabul qilindi, mos so'rov topilmadi (msg {event.message.id})")
@@ -363,7 +453,7 @@ async def main():
                     _log(f"Saved Messages buyruq: {low}")
                     return
                 if text.strip():
-                    user_client_stats.record_event('message')
+                    _stats_event('message')
                     await _consume(event, text)
                 return
 
@@ -372,7 +462,7 @@ async def main():
                 return
             if event.chat_id != getattr(monitor_entity, 'id', None):
                 return
-            user_client_stats.record_event('message')
+            _stats_event('message')
             await _consume(event, text)
         except Exception:
             logger.exception('message handler error')

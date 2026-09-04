@@ -51,7 +51,9 @@ def get_security_settings() -> dict:
         'shadow_mode': (Setting.get_setting(K_SHADOW, 'True') or '').lower() == 'true',
         'fail_open': (Setting.get_setting(K_FAIL_OPEN, 'False') or '').lower() == 'true',
         'gemini_api_key': (Setting.get_setting('gemini_api_key', '') or '').strip(),
-        'gemini_model': Setting.get_setting('gemini_model', 'gemini-3.1-flash-lite'),
+        # Keep in sync with gemini_client.MODEL_POOL primary — an unknown model
+        # name makes every AI call 404 and silently fall back to rules only.
+        'gemini_model': Setting.get_setting('gemini_model', 'gemini-3.6-flash'),
         'low_max': _int(K_LOW_MAX, 29),
         'med_max': _int(K_MED_MAX, 49),
         'high_max': _int(K_HIGH_MAX, 69),

@@ -18,7 +18,7 @@ buyurtmalarni bajaradi, admin panel barcha jarayonni boshqaradi.
 ## Tuzilma
 
 ```
-backend/   Django 5.2 + DRF + Channels (auth, katalog, buyurtmalar, to'lovlar,
+backend/   Django 5.1 + DRF + Channels (auth, katalog, buyurtmalar, to'lovlar,
            cardpay, security, settings_app, ws)
 frontend/  Next.js 14 App Router + TypeScript + Tailwind (mini-app + admin)
 ```

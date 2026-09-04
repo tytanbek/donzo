@@ -115,13 +115,19 @@ def _spawn(cmd, name, cwd=BASE_DIR):
 def _supervise(name, cmd):
     """Jarayonni backoff bilan abadiy nazorat qiladi."""
     backoff = 5
-    restart_flag = os.path.join(BASE_DIR, 'sessions', '.restart_requested')
+    is_userclient = name.upper().startswith('USERCLIENT')
+    # Slot 1 (legacy USERCLIENT) → .restart_requested; extra slots
+    # (USERCLIENT2, USERCLIENT3, …) → .restart_requested_<slot>.
+    _slot_suffix = name.upper().replace('USERCLIENT', '') or '1'
+    restart_flag = os.path.join(
+        BASE_DIR, 'sessions',
+        '.restart_requested' if _slot_suffix == '1' else f'.restart_requested_{_slot_suffix}',
+    )
     while not _stop.is_set():
-        # Self-heal: USERCLIENT har start oldidan sessiyani Neon DB'dan
-        # qayta tiklaymiz. Login wizard Neon'ga yozgan yangi sessiyani
-        # worker darhol oladi; kontener ichidagi eski/buzilgan fayl
-        # ustidan yoziladi. Faqat launcher startida emas — har startda.
-        if name.upper() == 'USERCLIENT':
+        # Self-heal: legacy USERCLIENT re-pulls its session from Neon before
+        # every start. Extra slots pull their own session from the
+        # UserClientAccount row inside user_client.py, so no bootstrap here.
+        if is_userclient and _slot_suffix == '1':
             try:
                 _session_bootstrap()
             except Exception as exc:
@@ -146,12 +152,12 @@ def _supervise(name, cmd):
         # urinish ma'nosiz. 5 daqiqada bir marta urinamiz.
         # rc=4 (EXIT_NOT_AUTHORIZED): sessiya noto'g'ri/bloklangan — ham faqat
         # qayta kirish bilan hal bo'ladi, 5 daqiqada bir marta urinamiz.
-        if rc in (4, 5) and name.upper() == 'USERCLIENT':
+        if rc in (4, 5) and is_userclient:
             backoff = 300
         # Admin panel orqali qayta kirish tugallanganda _restart_worker()
         # shu flag faylni yaratadi — backoff'ni kutmasdan darhol qayta
         # ishga tushirish uchun (qolgan 5 daqiqani kutmaymiz).
-        if name.upper() == 'USERCLIENT':
+        if is_userclient:
             waited = 0
             while not _stop.is_set() and waited < backoff:
                 if os.path.exists(restart_flag):
@@ -168,6 +174,37 @@ def _supervise(name, cmd):
                 continue
         _stop.wait(backoff)
         backoff = 5 if lived > 300 else min(backoff * 2, 60)
+
+
+def _userclient_reconciler(supervised_slots: set):
+    """Pick up UserClientAccount rows added AFTER startup (no redeploy needed).
+
+    Every 90s: any enabled slot we are not already supervising gets its own
+    supervise thread. Disabled/removed rows are handled by set_enabled /
+    delete_account killing the worker — the supervisor then idles on its
+    backoff (the process just keeps exiting NOT_AUTHORIZED cheaply). A full
+    cleanup happens on the next deploy.
+    """
+    import django as _dj
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+    while not _stop.is_set():
+        if _stop.wait(90):
+            return
+        try:
+            _dj.setup()
+            from apps.cardpay.models import UserClientAccount
+            enabled = list(UserClientAccount.objects.filter(enabled=True).values_list('slot', flat=True))
+            for slot in enabled:
+                key = str(slot)
+                if key in supervised_slots:
+                    continue
+                supervised_slots.add(key)
+                name = f'USERCLIENT{slot}'
+                cmd = [sys.executable, 'user_client.py', '--slot', str(slot)]
+                _log('MAIN', f'yangi user client slot {slot} — supervise ishga tushirilmoqda')
+                threading.Thread(target=_supervise, args=(name, cmd), daemon=True).start()
+        except Exception as exc:
+            _log('MAIN', f'userclient reconciler xatosi: {type(exc).__name__}: {str(exc)[:120]}')
 
 
 def _pinger():
@@ -298,12 +335,37 @@ def main():
         ('BOT', [sys.executable, 'bot.py']),
         ('USERCLIENT', [sys.executable, 'user_client.py']),
     ]
-    threads = [threading.Thread(target=_supervise, args=(n, c), daemon=True)
-               for n, c in procs]
+
+    # Extra Telethon monitor accounts (UserClientAccount, slot >= 2). They
+    # watch the SAME chat for redundancy; the unique (chat_id, message_id)
+    # guard means only the first to see a message credits it. Wrapped in a
+    # broad try/except so a DB hiccup can never stop DAPHNE/BOT from starting.
+    try:
+        import django as _dj
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        _dj.setup()
+        from apps.cardpay.models import UserClientAccount
+        for _acc in UserClientAccount.objects.filter(enabled=True).order_by('slot'):
+            procs.append((
+                f'USERCLIENT{_acc.slot}',
+                [sys.executable, 'user_client.py', '--slot', str(_acc.slot)],
+            ))
+            _log('MAIN', f'qo\'shimcha user client slot {_acc.slot} navbatga qo\'yildi')
+    except Exception as exc:
+        _log('MAIN', f"qo'shimcha user client'lar o'qilmadi: {type(exc).__name__}: {str(exc)[:120]}")
+
+    _supervised_slots = set()
+    threads = []
+    for n, c in procs:
+        if n.upper().startswith('USERCLIENT'):
+            _supervised_slots.add(n.upper().replace('USERCLIENT', '') or '1')
+        threads.append(threading.Thread(target=_supervise, args=(n, c), daemon=True))
     threads.append(threading.Thread(target=_pinger, daemon=True))
     threads.append(threading.Thread(target=_daily_audit, daemon=True))
     threads.append(threading.Thread(target=_health_report_loop, daemon=True))
     threads.append(threading.Thread(target=_run_migrations, daemon=True))
+    threads.append(threading.Thread(
+        target=_userclient_reconciler, args=(_supervised_slots,), daemon=True))
     for t in threads:
         t.start()
 
