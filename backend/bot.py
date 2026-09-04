@@ -162,7 +162,7 @@ def _heartbeat_loop():
             pass
 
 
-_POLLING_LOCK_TTL = 60  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi
+_POLLING_LOCK_TTL = 90  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi (Render deploy uchun 90s yetarli)
 
 
 def _acquire_polling_lock():
@@ -2065,6 +2065,15 @@ def main():
         _acquire_polling_lock()
     except Exception as exc:
         print(f"[BOT] Polling lock xatosi (davom etiladi): {exc}")
+
+    # ── STARTUP DELAY (Render deploy xavfsizligi) ──
+    # Render deploy paytida yangi konteyner eski to'xtamay turib ishga tushadi.
+    # 30 soniya kutish — eski konteyner o'lishini va Telegram 409 ni oldini olish.
+    import os
+    startup_delay = int(os.getenv('BOT_STARTUP_DELAY', '30'))
+    if startup_delay > 0:
+        print(f"[BOT] Startup delay: {startup_delay}s (Render deploy xavfsizligi)")
+        time.sleep(startup_delay)
     mark_started()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
     print("[BOT] Stats: .freebuff/bot-stats.json (heartbeat har 30s)")
