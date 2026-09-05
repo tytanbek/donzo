@@ -358,8 +358,11 @@ def _send_daily_marketing():
         if last == today:
             return
 
-        # Surat manbai: sozlama → faol Banner (admin panelda yuklangan)
+        # Surat manbai: sozlama → PUBG rasmiy rasm → faol Banner
         image = (Setting.get_setting('marketing_daily_image', '') or '').strip()
+        if not image:
+            # PUBG Mobile rasmiy reklama rasmi (rasmiy manba)
+            image = 'https://www.pubgmobile.com/en-US/images/share.jpg'
         if not image:
             try:
                 from apps.banners.models import Banner
@@ -467,11 +470,21 @@ def _send_creative_ad_to_groups():
             "❄️ DONZO — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
         ]
         msg = random.choice(creative_msgs)
-        res = _tg_api(token, 'sendMessage', {
+        # PUBG rasm bilan yuboramiz
+        pubg_image = 'https://www.pubgmobile.com/en-US/images/share.jpg'
+        res = _tg_api(token, 'sendPhoto', {
             'chat_id': cid,
-            'text': msg,
+            'photo': pubg_image,
+            'caption': msg,
             'disable_web_page_preview': True,
         })
+        # Rasm yuklanmasa — matnli xabar sifatida yuboramiz
+        if not (res and res.get('ok')):
+            res = _tg_api(token, 'sendMessage', {
+                'chat_id': cid,
+                'text': msg,
+                'disable_web_page_preview': True,
+            })
         if res and res.get('ok'):
             MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
             print(f"[MARKETING] Creative reklama: {cid} ({g.get('chat_title', '')})", flush=True)
