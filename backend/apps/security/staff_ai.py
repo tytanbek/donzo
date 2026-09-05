@@ -39,6 +39,7 @@ import re
 import time
 import urllib.request
 
+from django.db import models
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -816,6 +817,88 @@ _SCENARIO_DEFS = {
             'confirm': "Holatni o'zgartirishni tasdiqlaysizmi? (ha / yo'q)",
         },
     },
+    # ── YANGI: TO'LIQ BOSHQARUV STSENARIYLARI ──
+    'list_users': {
+        'label': 'Foydalanuvchilar ro\'yxati',
+        'keywords': ('foydalanuvchilar', 'userlar', 'user list', 'kimlar bor', 'ro\'yxat', 'hamma foydalanuvchi',
+                     'foydalanuvchilar kim', 'nehmer', 'account'),
+        'roles': ('admin', 'super_admin'),
+        'steps': ('query',),
+        'ask': {
+            'query': "Qidirish: username, telefon yoki ID yozing (yoki bo'sh qoldiring — hammasini ko'rsataman).",
+        },
+    },
+    'list_orders': {
+        'label': 'Buyurtmalar ro\'yxati',
+        'keywords': ('buyurtmalar', 'orderlar', 'order list', 'qanday buyurtma', 'bugungi buyurtma',
+                     'buyurtmalarim', 'buyurtmalar bor', 'pending buyurtma', 'kutilayotgan buyurtma'),
+        'roles': ('operator', 'admin', 'super_admin'),
+        'steps': ('filter',),
+        'ask': {
+            'filter': "Qaysi buyurtmalarni ko'ramiz?\n\n" +
+                      "  <b>bo'sh</b> = oxirgi 10 ta (barcha holatlar)\n" +
+                      "  <b>pending</b> = kutilayotgan\n" +
+                      "  <b>processing</b> = bajarilayotgan\n" +
+                      "  <b>completed</b> = bajarilgan\n" +
+                      "  <b>bugun</b> = faqat bugungi\n\n" +
+                      "Holatni yozing:",
+        },
+    },
+    'platform_stats': {
+        'label': 'Platforma statistikasi',
+        'keywords': ('statistika', 'stats', 'raqamlar', 'nechta', 'qancha tushdi', 'bugun nima',
+                     'haftalik', 'oylik', 'report', 'hisobot', 'tushum', 'statistika yoq'),
+        'roles': ('admin', 'super_admin'),
+        'steps': ('period',),
+        'ask': {
+            'period': "Qaysi davr uchun?\n\n" +
+                      "  <b>bugun</b> = bugun\n" +
+                      "  <b>kecha</b> = kecha\n" +
+                      "  <b>hafta</b> = oxirgi 7 kun\n" +
+                      "  <b>oy</b> = oxirgi 30 kun\n" +
+                      "  <b>hammasi</b> = barcha vaqt\n\n" +
+                      "Davrni yozing:",
+        },
+    },
+    'manage_banner': {
+        'label': 'Banner boshqaruvi',
+        'keywords': ('banner', 'reklama banner', 'banner qo\'sh', 'banner yoq', 'banner ochir',
+                     'banner ko\'rsat'),
+        'roles': ('admin', 'super_admin'),
+        'steps': ('action',),
+        'ask': {
+            'action': "Nima qilamiz?\n\n" +
+                      "  <b>ko'rsat</b> = hozirgi bannerlarni ko'rish\n" +
+                      "  <b>yoq/ochir [ID]</b> = banner holatini o'zgartirish\n" +
+                      "  <b>qo'sh [nomi] [rasm URL]</b> = yangi banner\n\n" +
+                      "Amalni yozing:",
+        },
+    },
+    'manage_promo': {
+        'label': 'Promokod boshqaruvi',
+        'keywords': ('promokod', 'promo', 'chegirma kod', 'kupon', 'promo code', 'promo qo\'sh',
+                     'promo yarat'),
+        'roles': ('admin', 'super_admin'),
+        'steps': ('action',),
+        'ask': {
+            'action': "Nima qilamiz?\n\n" +
+                      "  <b>ko'rsat</b> = hozirgi promokodlarni ko'rish\n" +
+                      "  <b>qo'sh [KOD] [chegirma%] [maksimal]</b> = yangi promokod\n\n" +
+                      "Amalni yozing:",
+        },
+    },
+    'manage_user': {
+        'label': 'Foydalanuvchi boshqaruvi',
+        'keywords': ('foydalanuvchini blokla', 'userni blokla', 'foydalanuvchini ochir', 'userni ochir',
+                     'foydalanuvchi muammosi', 'user block', 'user unblock'),
+        'roles': ('admin', 'super_admin'),
+        'steps': ('query', 'action', 'confirm'),
+        'ask': {
+            'query': "Qaysi foydalanuvchi? Username, telefon yoki ID yozing.",
+            'action': "Nima qilamiz?\n\n  <b>blokla</b> = foydalanuvchini blokla\n  <b>ochir</b> = blokdan chiqar\n  <b>balans</b> = balans ma'lumotlari",
+            'confirm': "Tasdiqlaysizmi? (ha / yo'q)",
+        },
+    },
 }
 
 # Stsenariy boshlanganda ko'rsatiladigan kirish savoli (detektorga mos kelganda).
@@ -827,6 +910,12 @@ _SCENARIO_INTRO = {
     'add_package': "Yaxshi — yangi paket qo'shamiz. Katalogdagi xizmatlarni ko'rsataman, qaysi biriga qo'shish kerak.",
     'topup_balance': "Yaxshi — balans to'ldiramiz. Foydalanuvchini aniqlaymiz.",
     'toggle_service': "Yaxshi — xizmat/paket holatini o'zgartiramiz.",
+    'list_users': "Foydalanuvchilar ro'yxatini ko'rsataman. Qidirish kerakmi?",
+    'list_orders': "Buyurtmalarni ko'rsataman. Qaysi holatdagini?",
+    'platform_stats': "Platforma statistikasini tayyorlayman. Qaysi davrni ko'ramiz?",
+    'manage_banner': "Bannerlarni boshqaramiz. Nima qilish kerak?",
+    'manage_promo': "Promokodlarni boshqaramiz. Nima qilish kerak?",
+    'manage_user': "Foydalanuvchini topamiz. Qidirish kerakmi?",
 }
 
 _CANCEL_WORDS = ('bekor', 'toxtat', "to'xtat", 'yoq', "yo'q", 'qayt', 'ortga', 'kerak emas', 'cancel')
@@ -1429,6 +1518,36 @@ def _run_scenario_action(scenario: str, data: dict, username: str) -> dict:
             except (IndexError, ValueError):
                 return {'ok': False, 'answer': f"{idx}-raqam noto'g'ri."}
 
+        # ── YANGI STSENARIYLAR: TO'LIQ BOSHQARUV ──
+
+        if scenario == 'manage_user':
+            from apps.users.models import User
+            uid = data.get('user_id')
+            act = (data.get('action') or '').lower()
+            if not uid:
+                return {'ok': False, 'answer': "Foydalanuvchi aniqlanmadi."}
+            try:
+                u = User.objects.get(pk=int(uid))
+            except (User.DoesNotExist, ValueError):
+                return {'ok': False, 'answer': f"Foydalanuvchi (id={uid}) topilmadi."}
+            if 'blok' in act:
+                u.is_active = False
+                u.save(update_fields=['is_active', 'updated_at'])
+                Setting.set_setting('staff_ai_last_action',
+                                    f"{_dt.datetime.now():%d.%m %H:%M} {username}: {u.username} bloklandi")
+                return {'ok': True, 'answer': f"🚫 @{u.username} bloklandi (is_active=False)."}
+            elif 'ochir' in act or 'unblock' in act:
+                u.is_active = True
+                u.save(update_fields=['is_active', 'updated_at'])
+                Setting.set_setting('staff_ai_last_action',
+                                    f"{_dt.datetime.now():%d.%m %H:%M} {username}: {u.username} blokdand chiqarildi")
+                return {'ok': True, 'answer': f"✅ @{u.username} faollashtirildi (is_active=True)."}
+            elif 'balans' in act:
+                bal = float(u.balance or 0)
+                cb = float(u.cashback_balance or 0)
+                return {'ok': True, 'answer': f"💰 @{u.username}: balans {bal:,.0f} so'm, keshbek {cb:,.0f} so'm"}
+            return {'ok': False, 'answer': "Noto'g'ri amal. Blokla / ochir / balans yozing."}
+
         return {'ok': False, 'answer': "Noma'lum stsenariy."}
     except Exception as exc:
         logger.exception('scenario action failed: %s', scenario)
@@ -1593,6 +1712,224 @@ def _scenario_handle(scenario: str, step: str, q: str, data: dict, username: str
             except (IndexError, ValueError):
                 detail = f"{ql}-raqam noto'g'ri."
             return {'answer': detail + f"\n\n{sc['ask']['confirm']}", 'done': False, 'data': data, 'next_step': 'confirm'}
+
+    # ── YANGI STSENARIYLAR: TO'LIQ BOSHQARUV ──
+
+    if scenario == 'list_users':
+        if step == 'query':
+            data['query'] = ql
+            from apps.users.models import User
+            q_filter = ql.strip()
+            if q_filter:
+                users = User.objects.filter(
+                    models.Q(username__icontains=q_filter) |
+                    models.Q(phone__icontains=q_filter) |
+                    models.Q(id__icontains=q_filter)
+                ).order_by('-created_at')[:15]
+            else:
+                users = User.objects.order_by('-created_at')[:15]
+            if not users:
+                return {'answer': f"'{q_filter}' bo'yicha foydalanuvchi topilmadi.", 'done': True, 'data': data}
+            lines = ["<b>Foydalanuvchilar</b> (oxirgi 15 ta):\n"]
+            for u in users:
+                bal = float(u.balance or 0)
+                lines.append(
+                    f"  <b>{u.username or '—'}</b> (id={u.id})\n"
+                    f"    Rol: {u.role} | Balans: {bal:,.0f} so'm | Tel: {u.phone or '—'}"
+                )
+            return {'answer': '\n'.join(lines), 'done': True, 'data': data}
+
+    if scenario == 'list_orders':
+        if step == 'filter':
+            data['filter'] = ql.lower() or 'all'
+            from apps.orders.models import Order
+            today = timezone.now().date()
+            filt = ql.lower().strip()
+            if filt in ('pending', 'kutilayotgan'):
+                orders = Order.objects.filter(status='pending').order_by('-created_at')[:10]
+                title = "Kutilayotgan buyurtmalar"
+            elif filt in ('processing', 'bajarilayotgan'):
+                orders = Order.objects.filter(status='processing').order_by('-created_at')[:10]
+                title = "Bajarilayotgan buyurtmalar"
+            elif filt in ('completed', 'bajarilgan'):
+                orders = Order.objects.filter(status='completed').order_by('-created_at')[:10]
+                title = "Bajarilgan buyurtmalar"
+            elif filt in ('bugun', 'today'):
+                orders = Order.objects.filter(created_at__date=today).order_by('-created_at')[:10]
+                title = "Bugungi buyurtmalar"
+            else:
+                orders = Order.objects.order_by('-created_at')[:10]
+                title = "Oxirgi buyurtmalar"
+            if not orders:
+                return {'answer': f"{title} topilmadi.", 'done': True, 'data': data}
+            status_e = {'pending': '🕐', 'processing': '⚙️', 'completed': '✅', 'cancelled': '❌'}
+            lines = [f"<b>{title}</b> ({orders.count()} ta):\n"]
+            for o in orders:
+                svc = o.service.name if (hasattr(o, 'service') and o.service) else '—'
+                e = status_e.get(o.status, '?')
+                lines.append(
+                    f"  {e} <b>{o.order_number}</b> — {svc}\n"
+                    f"    {float(o.total_price or 0):,.0f} so'm | {o.status} | {o.created_at:%d.%m %H:%M}"
+                )
+            return {'answer': '\n'.join(lines), 'done': True, 'data': data}
+
+    if scenario == 'platform_stats':
+        if step == 'period':
+            data['period'] = ql.lower() or 'today'
+            from django.db.models import Sum
+            from apps.orders.models import Order
+            from apps.users.models import User
+            from apps.cardpay.models import CardTopupRequest
+            period = ql.lower().strip()
+            today = timezone.now().date()
+            if period in ('kecha', 'yesterday'):
+                start = today - timezone.timedelta(days=1)
+                end = today
+                title = "Kecha"
+            elif period in ('hafta', 'week'):
+                start = today - timezone.timedelta(days=7)
+                end = today + timezone.timedelta(days=1)
+                title = "Oxirgi 7 kun"
+            elif period in ('oy', 'month'):
+                start = today - timezone.timedelta(days=30)
+                end = today + timezone.timedelta(days=1)
+                title = "Oxirgi 30 kun"
+            elif period in ('hammasi', 'all'):
+                start = None
+                end = None
+                title = "Barcha vaqt"
+            else:
+                start = today
+                end = today + timezone.timedelta(days=1)
+                title = "Bugun"
+            orders_q = Order.objects.all()
+            users_q = User.objects.all()
+            pays_q = CardTopupRequest.objects.filter(status='paid')
+            if start:
+                orders_q = orders_q.filter(created_at__date__gte=start, created_at__date__lt=end)
+                users_q = users_q.filter(created_at__date__gte=start, created_at__date__lt=end)
+                pays_q = pays_q.filter(paid_at__date__gte=start, paid_at__date__lt=end)
+            total_orders = orders_q.count()
+            completed = orders_q.filter(status='completed').count()
+            pending = orders_q.filter(status='pending').count()
+            revenue = orders_q.filter(payment_status='paid').aggregate(t=Sum('total_price'))['t'] or 0
+            new_users = users_q.count()
+            pays_count = pays_q.count()
+            pays_sum = pays_q.aggregate(t=Sum('unique_amount'))['t'] or 0
+            lines = [
+                f"<b>Platforma statistikasi — {title}</b>\n",
+                f"📦 Buyurtmalar: {total_orders} ta",
+                f"  ✅ Bajarilgan: {completed}",
+                f"  🕐 Kutilayotgan: {pending}",
+                f"💰 Tushum: {float(revenue):,.0f} so'm",
+                f"💳 To'lovlar: {pays_count} ta / {float(pays_sum):,.0f} so'm",
+                f"👤 Yangi foydalanuvchilar: {new_users}",
+            ]
+            return {'answer': '\n'.join(lines), 'done': True, 'data': data}
+
+    if scenario == 'manage_banner':
+        if step == 'action':
+            data['action'] = ql.lower()
+            from apps.banners.models import Banner
+            act = ql.lower().strip()
+            if act.startswith('ko') or act == 'list' or act == 'royxat':
+                banners = Banner.objects.all().order_by('-created_at')[:10]
+                if not banners:
+                    return {'answer': "Bannerlar yo'q.", 'done': True, 'data': data}
+                lines = ["<b>Bannerlar</b>:\n"]
+                for b in banners:
+                    st = '✅' if b.is_active else '❌'
+                    lines.append(f"  {st} #{b.id} — {b.title or '(sarlavhasiz)'} [{b.type}]")
+                return {'answer': '\n'.join(lines), 'done': True, 'data': data}
+            elif 'yoq' in act or 'ochir' in act:
+                # ID ni topish
+                import re as _re
+                m = _re.search(r'(\d+)', act)
+                if not m:
+                    return {'answer': "ID raqamini kiriting (masalan: 'yoq 3').", 'done': False, 'data': data, 'next_step': 'action'}
+                bid = int(m.group(1))
+                try:
+                    b = Banner.objects.get(pk=bid)
+                    b.is_active = not b.is_active
+                    b.save(update_fields=['is_active'])
+                    state = 'YOQILDI' if b.is_active else "O'CHIRILDI"
+                    return {'answer': f"Banner #{bid} {state}: {b.title or '—'}", 'done': True, 'data': data}
+                except Banner.DoesNotExist:
+                    return {'answer': f"Banner #{bid} topilmadi.", 'done': True, 'data': data}
+            elif 'qosh' in act or 'add' in act:
+                parts = act.split(None, 2)
+                title = parts[1] if len(parts) > 1 else ''
+                img = parts[2] if len(parts) > 2 else ''
+                if not title:
+                    return {'answer': "Banner nomini kiriting: qo'sh [nomi] [rasm URL]", 'done': False, 'data': data, 'next_step': 'action'}
+                b = Banner.objects.create(
+                    type='slider', title=title, image_url=img or 'https://via.placeholder.com/800x400',
+                    is_active=True
+                )
+                return {'answer': f"Banner qo'shildi: #{b.id} — {b.title}", 'done': True, 'data': data}
+            return {'answer': "Noto'g'ri amal. Ko'rsat / yoq [ID] / qo'sh [nomi] yozing.", 'done': False, 'data': data, 'next_step': 'action'}
+
+    if scenario == 'manage_promo':
+        if step == 'action':
+            data['action'] = ql.lower()
+            from apps.promocodes.models import PromoCode
+            act = ql.lower().strip()
+            if act.startswith('ko') or act == 'list' or act == 'royxat':
+                promos = PromoCode.objects.all().order_by('-created_at')[:10]
+                if not promos:
+                    return {'answer': "Promokodlar yo'q.", 'done': True, 'data': data}
+                lines = ["<b>Promokodlar</b>:\n"]
+                for p in promos:
+                    st = '✅' if p.is_active else '❌'
+                    lines.append(
+                        f"  {st} <b>{p.code}</b> — {p.discount_percent}% chegirma "
+                        f"(maks: {p.max_uses or 'cheksiz'} | ishlatildi: {p.used_count or 0})"
+                    )
+                return {'answer': '\n'.join(lines), 'done': True, 'data': data}
+            elif 'qosh' in act or 'add' in act:
+                import re as _re
+                parts = act.split()
+                code = parts[1].upper() if len(parts) > 1 else ''
+                pct = parts[2] if len(parts) > 2 else ''
+                max_uses = parts[3] if len(parts) > 3 else ''
+                if not code or not pct:
+                    return {'answer': "Format: qo'sh [KOD] [chegirma%] [maksimal]\nMasalan: qo'sh PROMO10 10 100", 'done': False, 'data': data, 'next_step': 'action'}
+                try:
+                    promo = PromoCode.objects.create(
+                        code=code, discount_percent=float(pct),
+                        max_uses=int(max_uses) if max_uses else None,
+                        is_active=True
+                    )
+                    return {'answer': f"Promokod yaratildi: {promo.code} — {promo.discount_percent}% chegirma ✅", 'done': True, 'data': data}
+                except Exception as e:
+                    return {'answer': f"Xato: {e}", 'done': True, 'data': data}
+            return {'answer': "Noto'g'ri amal. Ko'rsat / qo'sh [KOD] [chegirma%] yozing.", 'done': False, 'data': data, 'next_step': 'action'}
+
+    if scenario == 'manage_user':
+        if step == 'query':
+            data['query'] = ql
+            from apps.users.models import User
+            ident = ql.strip().lstrip('@').lower()
+            u = User.objects.filter(username__iexact=ident).first()
+            if u is None:
+                u = User.objects.filter(phone__icontains=ident).first() if ident else None
+            if u is None:
+                return {'answer': f"'{ident}' foydalanuvchi topilmadi.", 'done': True, 'data': data}
+            data['user_id'] = u.id
+            bal = float(u.balance or 0)
+            cb = float(u.cashback_balance or 0)
+            detail = (
+                f"<b>Foydalanuvchi</b>: {u.username or '—'} (id={u.id})\n"
+                f"  Rol: {u.role}\n"
+                f"  Balans: {bal:,.0f} so'm | Keshbek: {cb:,.0f} so'm\n"
+                f"  Tel: {u.phone or '—'} | Telegram: {u.telegram_id or '—'}\n"
+                f"  Faol: {'Ha' if u.is_active else 'Yo\'q'}\n"
+                f"  Yaratilgan: {u.created_at:%d.%m.%Y}"
+            )
+            return {'answer': detail + f"\n\n{sc['ask']['action']}", 'done': False, 'data': data, 'next_step': 'action'}
+        if step == 'action':
+            data['action'] = ql.lower()
+            return {'answer': sc['ask']['confirm'], 'done': False, 'data': data, 'next_step': 'confirm'}
 
     # Noma'lum bosqich — stsenariyni to'xtatamiz.
     return {'answer': "Kutilmagan holat — stsenariy bekor qilindi. Boshqa savol bo'lsa, so'rang.",
