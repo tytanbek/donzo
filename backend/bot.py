@@ -958,6 +958,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines += [
                 "/togrila [muammo] — AVTO-TUZATISH (+ AI kod tuzatish, backup bilan)",
                 "/qaytar — oxirgi AI kod tuzatishini asl holatiga qaytaradi",
+                "/reklama — barcha guruhlarga professional reklama yuborish",
                 "/restart backend|tunnel|bot|userclient|watchdog — komponent restart",
             ]
     lines += ["", "🚀 Eng asosiy: <b>Donat qilishni boshlash</b> tugmasi orqali web app'ga o'ting!"]
@@ -1201,6 +1202,99 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_html(
             f"❌ {target} restartda xatolik: {str(exc)[:150]}"
         )
+
+
+async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reklama — barcha marketing guruhlariga professional DONZO reklamasini yuboradi.
+    Faqat admin/super_admin uchun.
+    """
+    bump(updates=1, messages=1, command='reklama')
+    if not await _require_admin(update):
+        return
+
+    await update.effective_message.reply_html(
+        "📢 <b>Reklama yuborilmoqda...</b>\n\n"
+        "Barcha guruhlarga professional DONZO reklamasi yuborilmoqda."
+    )
+
+    promo_image = 'https://files.catbox.moe/wyrjmj.png'
+    caption = (
+        '🎭 <b>DONZO</b> — sirli platforma.\n\n'
+        'Sevimli o\'yinglaringiz uchun <b>TEZ, XAVFSIZ VA QULAY</b> top-up xizmati!\n\n'
+        '⚡ <b>PUBG Mobile</b> • <b>Mobile Legends</b> • <b>Free Fire</b>\n'
+        '💣 <b>Call of Duty</b> • <b>Genshin Impact</b> • <b>Valorant</b>\n\n'
+        '🎮 O\'yin zavqi endi yanada yaqin!\n'
+        '🔗 <a href="https://t.me/DONZOROBOT">@DONZOROBOT</a> orqali hoziroq boshlang!'
+    )
+
+    try:
+        from apps.settings_app.models import MarketingGroupStat, Setting
+        skip = {
+            str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+            str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
+        }
+        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
+    except Exception:
+        groups = []
+        skip = set()
+
+    if not groups:
+        await update.effective_message.reply_html(
+            "❌ Marketing guruhlari topilmadi.\n\n"
+            "Bot qo'shilgan guruhlar ro'yxati bo'sh."
+        )
+        return
+
+    sent = 0
+    failed = 0
+    for g in groups:
+        cid = str(g['chat_id'])
+        if not cid or cid in skip:
+            continue
+        try:
+            import json as _json
+            import urllib.request as _ur
+            token = Setting.get_setting('telegram_bot_token', '') or ''
+            if not token:
+                continue
+            payload = _json.dumps({
+                'chat_id': cid,
+                'photo': promo_image,
+                'caption': caption,
+                'parse_mode': 'HTML',
+                'disable_web_page_preview': True,
+            }).encode()
+            req = _ur.Request(
+                f'https://api.telegram.org/bot{token}/sendPhoto',
+                data=payload,
+                headers={'Content-Type': 'application/json'},
+            )
+            with _ur.urlopen(req, timeout=15) as resp:
+                result = _json.loads(resp.read())
+                if result.get('ok'):
+                    sent += 1
+                else:
+                    failed += 1
+            import time as _t
+            _t.sleep(1)  # rate limit
+        except Exception:
+            failed += 1
+
+    try:
+        from apps.settings_app.models import MarketingGroupStat
+        for g in groups:
+            cid = str(g['chat_id'])
+            if cid not in skip:
+                MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+    except Exception:
+        pass
+
+    await update.effective_message.reply_html(
+        f"📢 <b>Reklama yuborildi!</b>\n\n"
+        f"✅ Muvaffaqiyatli: <b>{sent}</b> guruh\n"
+        f"❌ Xato: <b>{failed}</b> guruh\n\n"
+        f"Rasm: professional DONZO reklamasi"
+    )
 
 
 async def tunnel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2033,6 +2127,7 @@ def main():
     application.add_handler(CommandHandler('qaytar', qaytar_command))
     application.add_handler(CommandHandler('restart', restart_command))
     application.add_handler(CommandHandler('tunnel', tunnel_command))
+    application.add_handler(CommandHandler('reklama', reklama_command))
     # DONZO AI — staff guruhida botga reply / @-mention / shaxsiy xabar
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, staff_ai_handler))
     # Ovozli xabarlar — staff guruhida eshitib tushunadi (Gemini transkripsiya)
