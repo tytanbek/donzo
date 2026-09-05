@@ -57,7 +57,7 @@ from bot_stats import (
 
 # ── Heartbeat: keeps .freebuff/bot-stats.json fresh so the admin
 #    panel can show the bot is alive even with no user traffic. ──
-HEARTBEAT_INTERVAL = 30
+HEARTBEAT_INTERVAL = 15  # lock yangilash intervali (15s — tezroq lock himoyasi)
 
 # ── Fragment live-price sync: once a day (checked every hour). The bot is
 #    the always-on process (supervisor keeps it alive), so it's the natural
@@ -162,28 +162,19 @@ def _heartbeat_loop():
             pass
 
 
-_POLLING_LOCK_TTL = 90  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi (Render deploy uchun 90s yetarli)
+_POLLING_LOCK_TTL = 120  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi
 
 
 def _acquire_polling_lock():
     """Startup lock — deploy paytida ikki bot instansiyasi bir vaqtda polling
     qilib 409 (conflict) bermasligi uchun.
 
-    Render yangi deploy'ni ishga tushirganda eski kontener hali bir necha
-    soniya yashaydi — ikkalasi ham getUpdates chaqirsa Telegram 409 beradi
-    (xatolar 'Bot holati' panelida yig'iladi). Qoida:
-      • Boshqa instansiya lock'ni YANGI tutsa (< TTL) — polling boshlashni
-        kutamiz (15s qadam bilan, maks ~2.5 daqiqa).
-      • Lock eski / yo'q bo'lsa — o'zimiz olamiz va davom etamiz.
-    Lock'ni heartbeat loopi har 30s yangilaydi (yuqoriga qarang).
+    Yangi instansiya: lock ni kutadi (maks 60s), keyin eski instansiya
+    to'xtashini kutmaydi — drop_pending_updates bilan boshlaydi.
+    Lock ni heartbeat loopi har 15s yangilaydi.
     """
     from apps.settings_app.models import Setting
-    # Eski instansiya lock'ni heartbeat bilan har 30s yangilaydi — shuning
-    # uchun yangi instansiya eski o'lguncha (Render uni ~1-2 daqiqada
-    # o'ldiradi) kutishi kerak. 15s qadam × 40 urinish = 10 daqiqa sabr.
-    # 10 daqiqadan keyin ham lock yangi bo'lsa — baribir boshlaymiz
-    # (hech qachon abadiy osilib qolmaydi).
-    for attempt in range(40):
+    for attempt in range(4):  # 4 × 15s = 60s max kutish
         try:
             val = Setting.get_setting('bot_polling_lock', None)
         except Exception:
@@ -197,9 +188,14 @@ def _acquire_polling_lock():
                 pass
             print(f"[BOT] Polling lock olindi (attempt {attempt})")
             return
-        print(f"[BOT] Boshqa instansiya polling qilmoqda (lock {int(age)}s) — 15s kutaman...")
+        print(f"[BOT] Eski instansiya hali ishlayapti (lock {int(age)}s) — 15s kutaman...")
         time.sleep(15)
-    print("[BOT] Lock kutish tugadi — polling boshlanmoqda (PTB 409 ni o'zi hal qiladi)")
+    # 60s kutganmiz — eski instansiya to'xtamagan, lekin biz davom etamiz
+    try:
+        Setting.set_setting('bot_polling_lock', str(time.time()))
+    except Exception:
+        pass
+    print("[BOT] Lock o'zgartirildi — polling boshlanmoqda")
 
 
 def _price_sync_loop():
@@ -2070,13 +2066,13 @@ def main():
     # Render deploy paytida yangi konteyner eski to'xtamay turib ishga tushadi.
     # 30 soniya kutish — eski konteyner o'lishini va Telegram 409 ni oldini olish.
     import os
-    startup_delay = int(os.getenv('BOT_STARTUP_DELAY', '30'))
+    startup_delay = int(os.getenv('BOT_STARTUP_DELAY', '15'))
     if startup_delay > 0:
         print(f"[BOT] Startup delay: {startup_delay}s (Render deploy xavfsizligi)")
         time.sleep(startup_delay)
     mark_started()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
-    print("[BOT] Stats: .freebuff/bot-stats.json (heartbeat har 30s)")
+    print("[BOT] Stats: .freebuff/bot-stats.json (heartbeat har 15s)")
 
     # Fragment live-price sync (kuniga bir marta) — bot bilan parallel ishlaydi.
     threading.Thread(target=_price_sync_loop, daemon=True).start()
@@ -2099,12 +2095,22 @@ def main():
     threading.Thread(target=_creative_ad_loop, daemon=True).start()
     print("[BOT] Creative reklama loopi: har 3 soatda sirli shaxs reklamasi")
 
+    # ── MANUAL POLLING (409 xavfsizligi bilan) ──
+    # run_polling() 409 xatosini ichki retry bilan hal qiladi, lekin
+    #Render deploy'da eski konteyner to'xtashini kutmaydi.
+    # Manual polling: lock monitoring + drop_pending_updates + graceful stop.
+    import signal as _signal
+
+    updater = application.updater
     try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # drop_pending_updates=True — eski pending xabarlarni tozalaydi
+        # (409 conflict sabablaridan biri: eski xabarlar navbatda turadi)
+        updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES,
+        )
+        print("[BOT] Polling boshlandi (drop_pending_updates=True)")
     except InvalidToken:
-        # DB'dagi token noto'g'ri (placeholder bo'lib qolgan). Aniq xabar
-        # beramiz va maxsus exit code (2) bilan chiqamiz — supervisor buni
-        # ko'rib, tez-tez restart qilmaydi.
         print("=" * 60)
         print("[BOT] XATO: Telegram bot token NOTO'G'RI yoki rad etildi!")
         print("[BOT] Hozirgi token: " + (token[:12] + '...' if token else "(bo'sh)"))
@@ -2115,6 +2121,56 @@ def main():
         print("[BOT]   3) Bot 1 daqiqa ichida avtomatik qayta ishga tushadi.")
         print("=" * 60)
         sys.exit(2)
+
+    # ── LOCK MONITORING — eski instansiya to'xtaganini tekshiradi ──
+    # Agar boshqa instansiya lock'ni yangilasa — bu instansiya to'xtaydi
+    # (yangi instansiya xavfsiz ishlasin).
+    _lock_holder = [time.time()]
+    _shutdown_event = threading.Event()
+
+    def _lock_monitor():
+        """Har 15s da lock'ni tekshiradi. Boshqasi olgan bo'lsa — to'xtaydi."""
+        my_lock_time = _lock_holder[0]
+        while not _shutdown_event.is_set():
+            try:
+                from apps.settings_app.models import Setting as _S
+                val = _S.get_setting('bot_polling_lock', None)
+                if val:
+                    lock_time = float(val)
+                    if lock_time > my_lock_time + 5:  # boshqasi 5s keyin olgan
+                        print("[BOT] ⚠️ Boshqa instansiya lock oldi — to'xtayman")
+                        try:
+                            _signal.signal(_signal.SIGTERM, lambda *_: _shutdown_event.set())
+                        except Exception:
+                            pass
+                        _shutdown_event.set()
+                        return
+            except Exception:
+                pass
+            _shutdown_event.wait(15)
+
+    threading.Thread(target=_lock_monitor, daemon=True).start()
+
+    # Graceful shutdown: SIGTERM/SIGINT → to'xtatish
+    def _shutdown_handler(signum, frame):
+        print(f"[BOT] Signal {signum} — to'xtatilmoqda...")
+        _shutdown_event.set()
+    _signal.signal(_signal.SIGTERM, _shutdown_handler)
+    _signal.signal(_signal.SIGINT, _shutdown_handler)
+
+    # Asosiy loop — lock monitoring yoki signal kutish
+    try:
+        while not _shutdown_event.is_set():
+            _shutdown_event.wait(5)
+    except KeyboardInterrupt:
+        _shutdown_event.set()
+
+    print("[BOT] Polling to'xtatilmoqda...")
+    try:
+        updater.stop()
+    except Exception:
+        pass
+    print("[BOT] Bot to'xtatildi")
 
 
 if __name__ == '__main__':
