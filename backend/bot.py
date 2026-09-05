@@ -358,11 +358,11 @@ def _send_daily_marketing():
         if last == today:
             return
 
-        # Surat manbai: sozlama → DONZO reklama rasmi → faol Banner
+        # Surat manbai: sozlama → DONZO professional reklama rasmi → faol Banner
         image = (Setting.get_setting('marketing_daily_image', '') or '').strip()
         if not image:
-            # DONZO professional reklama rasmi (PUBG/gaming tema)
-            image = 'https://files.catbox.moe/wzca2c.png'
+            # DONZO professional reklama rasmi (PUBG/gaming tema, 1200x1200)
+            image = 'https://files.catbox.moe/wyrjmj.png'
         if not image:
             try:
                 from apps.banners.models import Banner
@@ -470,8 +470,8 @@ def _send_creative_ad_to_groups():
             "❄️ DONZO — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
         ]
         msg = random.choice(creative_msgs)
-        # DONZO reklama rasmi bilan yuboramiz
-        promo_image = 'https://files.catbox.moe/wzca2c.png'
+        # DONZO professional reklama rasmi bilan yuboramiz
+        promo_image = 'https://files.catbox.moe/wyrjmj.png'
         res = _tg_api(token, 'sendPhoto', {
             'chat_id': cid,
             'photo': promo_image,
