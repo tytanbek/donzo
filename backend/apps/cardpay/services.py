@@ -890,13 +890,16 @@ def build_health_report() -> str:
         if _container_started_recently():
             bot_starting = True
         else:
-            # Fayl tizimidan mustaqil zaxira: bot_polling_lock har 30 soniyada
-            # yangilanadi (heartbeat loop) — yangi bo'lsa bot TIRIK.
+            # Fayl tizimidan mustaqil zaxira: bot_polling_lock '<owner>:<ts>'
+            # formatida har 15 soniyada yangilanadi (heartbeat) — yangi bo'lsa
+            # bot TIRIK. (Eski format: faqat ts — ham qo'llab-quvvatlanadi.)
             try:
                 lock = Setting.get_setting('bot_polling_lock', '')
                 if lock:
                     try:
-                        lt = float(lock)
+                        raw = str(lock)
+                        ts = raw.split(':', 1)[1] if ':' in raw else raw
+                        lt = float(ts)
                         if _time.time() - lt < 90:
                             bot_ok = True
                             bot_detail = 'ishlayapti'

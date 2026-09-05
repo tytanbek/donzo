@@ -153,49 +153,75 @@ def _heartbeat_loop():
     while True:
         time.sleep(HEARTBEAT_INTERVAL)
         heartbeat()
-        # Polling lock'ni yangilab turamiz — jonli instansiya lock'ni doim
-        # yangi tutadi; o'lgan instansiyaning lock'i eskiradi (TTL).
+        # Polling lock'ni yangilab turamiz — faqat O'ZIMIZ egalik qilsak.
+        # Agar boshqa instansiya lock'ni olib qo'ygan bo'lsa (deploy paytida
+        # yangi konteyner egasi bo'ldi) — bu yerda uni buzmaymiz; lock
+        # monitor buni ko'rib, bu instansiyani to'xtatadi (graceful).
         try:
             from apps.settings_app.models import Setting
-            Setting.set_setting('bot_polling_lock', str(time.time()))
+            val = Setting.get_setting('bot_polling_lock', '')
+            if val and ':' in str(val):
+                owner = str(val).split(':')[0]
+                if owner == _INSTANCE_ID:
+                    Setting.set_setting('bot_polling_lock', f'{_INSTANCE_ID}:{time.time()}')
         except Exception:
             pass
 
 
 _POLLING_LOCK_TTL = 120  # soniya — lock shu vaqtdan eski bo'lsa egasi o'lgan deb hisoblanadi
 
+# Har bir bot jarayonining noyob identifikatori (polling lock egasi).
+# main() da _acquire_polling_lock() tomonidan o'rnatiladi.
+_INSTANCE_ID = None
+
 
 def _acquire_polling_lock():
     """Startup lock — deploy paytida ikki bot instansiyasi bir vaqtda polling
     qilib 409 (conflict) bermasligi uchun.
 
-    Yangi instansiya: lock ni kutadi (maks 60s), keyin eski instansiya
-    to'xtashini kutmaydi — drop_pending_updates bilan boshlaydi.
-    Lock ni heartbeat loopi har 15s yangilaydi.
+    Lock qiymati: "<owner_id>:<timestamp>". Owner_id har bir bot jarayoni
+    uchun noyob (pid + uuid). Qoida:
+      • Yangi instansiya: agar boshqasi yangi lock tutsa (< TTL) — kutamiz
+        (15s qadam, maks 60s); eski/bo'sh bo'lsa — o'zimiz olamiz.
+      • 60s dan keyin ham lock yangi bo'lsa — kuch bilan o'z egamizni
+        yozamiz (eski konteyner Render'da o'ldirilgan bo'lishi mumkin).
+    Lock'ni heartbeat faqat O'Z egasi bo'lsa yangilaydi; boshqasi egasi
+    bo'lib qolsa — lock monitor bu instansiyani to'xtatadi.
     """
+    global _INSTANCE_ID
+    import uuid as _uuid
+    _INSTANCE_ID = f'{os.getpid()}-{_uuid.uuid4().hex[:6]}'
     from apps.settings_app.models import Setting
     for attempt in range(4):  # 4 × 15s = 60s max kutish
         try:
-            val = Setting.get_setting('bot_polling_lock', None)
+            val = Setting.get_setting('bot_polling_lock', '')
         except Exception:
-            val = None
+            val = ''
         now = time.time()
-        age = (now - float(val)) if val else None
-        if val is None or age is None or age > _POLLING_LOCK_TTL:
+        owner = None
+        ts = None
+        if val and ':' in str(val):
             try:
-                Setting.set_setting('bot_polling_lock', str(now))
+                owner, ts = str(val).split(':', 1)
+                ts = float(ts)
+            except Exception:
+                owner, ts = None, None
+        if owner is None or ts is None or (now - ts) > _POLLING_LOCK_TTL:
+            try:
+                Setting.set_setting('bot_polling_lock', f'{_INSTANCE_ID}:{now}')
             except Exception:
                 pass
-            print(f"[BOT] Polling lock olindi (attempt {attempt})")
+            print(f"[BOT] Polling lock olindi (attempt {attempt}, id {_INSTANCE_ID})")
             return
-        print(f"[BOT] Eski instansiya hali ishlayapti (lock {int(age)}s) — 15s kutaman...")
+        print(f"[BOT] Boshqa instansiya ishlayapti (lock {owner}, {int(now - ts)}s) — 15s kutaman...")
         time.sleep(15)
     # 60s kutganmiz — eski instansiya to'xtamagan, lekin biz davom etamiz
     try:
-        Setting.set_setting('bot_polling_lock', str(time.time()))
+        Setting.set_setting('bot_polling_lock', f'{_INSTANCE_ID}:{time.time()}')
     except Exception:
         pass
     print("[BOT] Lock o'zgartirildi — polling boshlanmoqda")
+    return
 
 
 def _price_sync_loop():
@@ -2231,26 +2257,22 @@ def main():
         sys.exit(2)
 
     # ── LOCK MONITORING — eski instansiya to'xtaganini tekshiradi ──
-    # Agar boshqa instansiya lock'ni yangilasa — bu instansiya to'xtaydi
-    # (yangi instansiya xavfsiz ishlasin).
-    _lock_holder = [time.time()]
+    # Agar BOSHQA instansiya lock'ni olib qo'ysa (owner_id o'zgarsa) — bu
+    # instansiya o'zini to'xtatadi (yangi instansiya xavfsiz ishlasin).
+    # O'Z heartbeat'i owner_id'ni o'zgartirmaydi — shuning uchun o'z-o'zini
+    # o'ldirish xavfi yo'q.
     _shutdown_event = threading.Event()
 
     def _lock_monitor():
-        """Har 15s da lock'ni tekshiradi. Boshqasi olgan bo'lsa — to'xtaydi."""
-        my_lock_time = _lock_holder[0]
+        """Har 15s da lock egasini tekshiradi. Boshqa egasi bo'lsa — to'xtaydi."""
         while not _shutdown_event.is_set():
             try:
                 from apps.settings_app.models import Setting as _S
-                val = _S.get_setting('bot_polling_lock', None)
-                if val:
-                    lock_time = float(val)
-                    if lock_time > my_lock_time + 5:  # boshqasi 5s keyin olgan
-                        print("[BOT] ⚠️ Boshqa instansiya lock oldi — to'xtayman")
-                        try:
-                            _signal.signal(_signal.SIGTERM, lambda *_: _shutdown_event.set())
-                        except Exception:
-                            pass
+                val = _S.get_setting('bot_polling_lock', '')
+                if val and ':' in str(val):
+                    owner = str(val).split(':')[0]
+                    if owner and owner != _INSTANCE_ID:
+                        print(f"[BOT] ⚠️ Yangi instansiya lock oldi ({owner}) — to'xtayman")
                         _shutdown_event.set()
                         return
             except Exception:
