@@ -699,33 +699,51 @@ def initdata_login(request):
 
 
 
-    # Foydalanuvchini topamiz/yaratamiz
+    # Foydalanuvchini topamiz/yaratamiz.
 
-    user, created = User.objects.get_or_create(
+    # MUHIM: telegram_id bo'yicha topilmasa — username bo'yicha ham qidiramiz.
 
-        telegram_id=ui['telegram_id'],
+    # Fragment-login orqali yaratilgan user'da telegram_id bo'lmasligi mumkin;
 
-        defaults={
+    # faqat get_or_create(telegram_id=...) ishlatilsa, shu username'li yangi
 
-            'username': username,
+    # user yaratishga uriniladi va username UNIQUE conflict → 500 (IntegrityError).
 
-            'email': email,
+    user = (
 
-            'role': Role.CUSTOMER,
+        User.objects.filter(telegram_id=ui['telegram_id']).first()
 
-            'first_name': ui['first_name'],
+        or User.objects.filter(username__iexact=username).first()
 
-            'last_name': ui['last_name'],
-
-            'language_code': ui['language_code'],
-
-            'is_telegram_premium': ui['is_premium'],
-
-            'is_active': True,
-
-        },
+        or User.objects.filter(telegram_username__iexact=username).first()
 
     )
+
+    created = user is None
+
+    if created:
+
+        user = User(
+
+            username=username,
+
+            email=email,
+
+            role=Role.CUSTOMER,
+
+            first_name=ui['first_name'],
+
+            last_name=ui['last_name'],
+
+            language_code=ui['language_code'],
+
+            is_telegram_premium=ui['is_premium'],
+
+            is_active=True,
+
+        )
+
+        user.save()
 
 
 
@@ -756,6 +774,13 @@ def initdata_login(request):
     if not user.telegram_username and ui['username']:
 
         user.telegram_username = ui['username']
+
+    # Mavjud user telegram_id'siz topilgan bo'lsa (fragment-login user'i)
+    # — endi initData tasdiqlangan telegram_id biriktiriladi. Aks holda keyingi
+    # safar get_or_create yangi akkaunt ochib qo'yardi (takroriy user).
+    if not user.telegram_id:
+
+        user.telegram_id = ui['telegram_id']
 
     user.fragment_synced_at = django_settings.timezone.now()
 
