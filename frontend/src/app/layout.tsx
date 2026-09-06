@@ -65,17 +65,20 @@ export default function RootLayout({
       const tg = (window as any).Telegram?.WebApp;
       if (!tg?.initData) {
         // Telegram ichida emas yoki initData kelmagan — FragmentLogin chiqariladi.
+        setAuthChecked(true);
         return;
       }
 
       // initData'ni olamiz (signed data) va backendga yuboramiz.
       const initData = tg.initData;
       if (!initData) {
+        setAuthChecked(true);
         return;
       }
 
       const res = await authAPI.initdataLogin(initData);
       if (!res.data) {
+        setAuthChecked(true);
         return;
       }
 
@@ -86,7 +89,9 @@ export default function RootLayout({
       setAuthChecked(true);
     } catch {
       // initData avto-kirish ishlamasa (backend xato, signature noto'g'ri, 
-      // yoki bot token yo'q) — FragmentLogin chiqariladi.
+      // yoki bot token yo'q) — hech qachon cheksiz loading'da qolmasligi
+      // uchun authChecked'ni DOIM set qilamiz (FragmentLogin ko'rsatiladi).
+      setAuthChecked(true);
     }
   };
 
