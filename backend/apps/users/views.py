@@ -792,7 +792,7 @@ def _initdata_login_inner(request):
 
         user.telegram_id = ui['telegram_id']
 
-    user.fragment_synced_at = django_settings.timezone.now()
+    user.fragment_synced_at = timezone.now()
 
     user.save()
 
