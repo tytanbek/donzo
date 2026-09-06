@@ -32,6 +32,12 @@ class LoginCodeVerifyThrottle(ScopedRateThrottle):
     """Kodni tekshirish — 20/min/IP."""
     scope = 'login_code_verify'
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings as django_settings
+import hashlib
+import hmac
+import base64
+import json as _json
+import time as _time
 
 from .models import User, Role
 from .serializers import UserSerializer, ProfileUpdateSerializer
@@ -482,12 +488,354 @@ def fragment_login(request):
 fragment_login.view_class.throttle_scope = 'fragment_login'
 
 
-# ── BOT ORQALI TASDIQLASH KODI ────────────────────────────────────────────
-# Login amalga oshmasa foydalanuvchi username kiritadi → backend kod yaratib
-# bot orqali shu foydalanuvchining Telegram chatiga yuboradi → foydalanuvchi
-# kodni web app'ga kiritadi → JWT. Kod SHA-256 hash bo'lib saqlanadi,
-# bir martalik, 5 daqiqa yaroqli (code_utils / TelegramLoginCode).
 
+# ── TELEGRAM WEBAPP INITDATA — AVTO-KIRISH (REAL LOGIN) ──────────────────────────
+# Foydalanuvchi Telegram ichida WebApp ochganda `window.Telegram.WebApp.initData`
+# ichida sign相続人 (signed data) mavjud. Backend HMAC-SHA256 bilan tasdiqlaydi:
+# bot token bilan yaratilgan signature mos keladigani — foydalanuvchi haqiqiy
+# Telegram foydalanuvchisi. Boshqa manbadan kelgan initData yolg'iz signature
+# bilan tasdiqlanmaydi (HMAC orqali).
+#
+# Bu ENG YAXSHI avto-kirish hisoblanadi, chunki:
+#   • Foydalanuvchi hech narsa yozish shart emas — initData avtomatik
+#   • Signature bot token bilan tasdiqlanadi — hosebqorovlar yolg'izso'z tugatmaydi
+#   • Telegram orqali tasdiqlangan → account takeover qiyin
+#
+# Qo'shimcha: initData bilan login qilingan foydalanuvchi telegram_id, username,
+# first_name, last_name avtomatik saqlanadi.
+
+
+def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
+    """Telegram WebApp initData'ni HMAC-SHA256 orqali tasdiqlaydi.
+
+    Qaytadi: tasdiqlangan {user: {...}, chat: {...}, ...} yoki None (noto'g'ri).
+
+    Telefonir qiyshnasligi: Telegram rasmiy hujjatlari (core.telegram.org/bots/webapps#validating-received-data)
+    ga ko'ra:
+      1. initData'ni & bilan ajratish → berilgan hash'ni olamiz (hash).
+      2. check_string = sorted keys, <key>=<value> formatida \r
+ bilan.
+      3. secret_key = HMAC_SHA256(bot_token, "WebAppData").
+      4. expected = base64url(HMAC_SHA256(secret_key, check_string)).
+      5. hash_ == expected → tasdiqlangan.
+    """
+    if not init_data_raw or not bot_token:
+        return None
+
+    try:
+        params: dict[str, str] = {}
+        for pair in init_data_raw.split('&'):
+            if '=' not in pair:
+                continue
+            k, v = pair.split('=', 1)
+            params[k] = _urldecode(v)
+    except Exception:
+        return None
+
+    hash_ = params.pop('hash', None)
+    if not hash_:
+        return None
+
+    # check_string: lexicographically sorted keys, <key>=<value>
+    sorted_items = sorted(params.items(), key=lambda x: x[0])
+    check_string = '\r\n'.join(f'{k}={v}' for k, v in sorted_items)
+
+    # secret_key = HMAC_SHA256(bot_token, "WebAppData")
+    secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
+    # expected = base64url(HMAC_SHA256(secret, check_string))
+    expected = hmac.new(secret, check_string.encode(), hashlib.sha256).digest()
+    expected_b64 = base64.urlsafe_b64encode(expected).rstrip(b'=').decode()
+
+    if not hmac.compare_digest(hash_, expected_b64):
+        logger.warning('[InitData] signature mos kelmaydi')
+        return None
+
+    return params
+
+
+def _urldecode(s: str) -> str:
+    """URL-encoded string'ni decode qiladi (+ → space, %XX → byte)."""
+    s = s.replace('+', ' ')
+    out: list[str] = []
+    i = 0
+    while i < len(s):
+        if s[i] == '%' and i + 2 < len(s):
+            try:
+                out.append(chr(int(s[i+1:i+3], 16)))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.append(s[i])
+        i += 1
+    return ''.join(out)
+
+
+def _initdata_user_info(params: dict) -> dict:
+    """initData'dan foydalanuvchi ma'lumotlarini olib tashlaydi.
+
+    Qaytaradi: {telegram_id, username, first_name, last_name, language_code, is_premium}
+    """
+    user_raw = params.get('user', '{}')
+    try:
+        user_data = _json.loads(user_raw) if isinstance(user_raw, str) else (user_raw or {})
+    except Exception:
+        user_data = {}
+
+    chat_raw = params.get('chat', '{}')
+    try:
+        chat_data = _json.loads(chat_raw) if isinstance(chat_raw, str) else (chat_raw or {})
+    except Exception:
+        chat_data = {}
+
+    return {
+        'telegram_id': str(user_data.get('id', '')), 
+        'username': user_data.get('username', '') or '',
+        'first_name': user_data.get('first_name', '') or '',
+        'last_name': user_data.get('last_name', '') or '',
+        'language_code': user_data.get('language_code', '') or '',
+        'is_premium': bool(user_data.get('is_premium', False)),
+        'chat_type': chat_data.get('type', '') or '',
+    }
+
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+@throttle_classes([ScopedRateThrottle])
+def initdata_login(request):
+    """
+    POST /api/v1/auth/initdata-login/
+
+    TELEGRAM WEBAPP AVTO-KIRISH: foydalanuvchi Telegram ichida WebApp ochganda
+    `window.Telegram.WebApp.initData` ichida sign相続 (signed data) mavjud.
+    Backend HMAC-SHA256 bilan tasdiqlaydi: bot token bilan yaratilgan signature
+    mos keladigani — foydalanuvchi haqiqiy Telegram foydalanuvchisi.
+
+    Boshqa manbadan kelgan initData yolg'iz signature bilan tasdiqlanmaydi.
+
+    Body: { "init_data": "<initData string>" }
+    Qaytaradi: {access, refresh, user} — ya'ni JWT va foydalanuvchi ma'lumotlari.
+
+    Agarga foydalanuvchi mavjud bo'lmasa — yangi mijoz yaratiladi (get_or_create).
+    Agar foydalanuvchi mavjud bo'lsa — uning profili yangilanishi bilan kirish o'tadi.
+    
+    Super admin: super_admin_telegram_id o'rnatilgan bo'lsa, shu ID'ga ega bo'lgan
+    foydalanuvchi super_admin ga aylantiriladi (avtomatik).
+    """
+    init_data_raw = (request.data.get('init_data') or '').strip()
+    if not init_data_raw:
+        return Response(
+
+            {'detail': 'init_data yetishmayapti'},
+
+            status=status.HTTP_400_BAD_REQUEST,
+
+        )
+
+
+
+    # Bot token ni so'ramiz (Settings'dan)
+
+    bot_token = (Setting.get_setting('telegram_bot_token', '') or '').strip()
+
+    if not bot_token:
+
+        logger.error('[InitDataLogin] bot token yo\'q — initData tasdiqlanmaydi')
+
+        return Response(
+
+            {'detail': 'Sozlamalar tasdiqlanmadi'},
+
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+
+        )
+
+
+
+    # initData'ni tasdiqlaymiz
+
+    params = _verify_initdata(init_data_raw, bot_token)
+
+    if not params:
+
+        logger.info('[InitDataLogin] noto\'g\'ri initData')
+
+        return Response(
+
+            {'detail': 'Kirish tasdiqlanmadi'},
+
+            status=status.HTTP_403_FORBIDDEN,
+
+        )
+
+
+
+    # Foydalanuvchi ma'lumotlarini olamiz
+
+    ui = _initdata_user_info(params)
+
+    if not ui['telegram_id']:
+
+        logger.info('[InitDataLogin] telegram_id yo\'q — login rad etildi')
+
+        return Response(
+
+            {'detail': 'Foydalanuvchi ma\'lumoti yo\'q'},
+
+            status=status.HTTP_403_FORBIDDEN,
+
+        )
+
+
+
+    # Agar foydalanuvchi mavjud bo'lmasa — email hisoblanadi (telegram_id@donzo.local)
+
+    username = ui['username'].lower().lstrip('@') if ui['username'] else ui['telegram_id']
+
+    email = f"{username}@donzo.user" if not ui['username'] else f"{ui['username']}@donzo.user"
+
+
+
+    # Foydalanuvchini topamiz/yaratamiz
+
+    user, created = User.objects.get_or_create(
+
+        telegram_id=ui['telegram_id'],
+
+        defaults={
+
+            'username': username,
+
+            'email': email,
+
+            'role': Role.CUSTOMER,
+
+            'first_name': ui['first_name'],
+
+            'last_name': ui['last_name'],
+
+            'language_code': ui['language_code'],
+
+            'is_telegram_premium': ui['is_premium'],
+
+            'is_active': True,
+
+        },
+
+    )
+
+
+
+    # Agar username o\'zgargan bo\'lsa — yangilaymiz
+
+    if user.username != username:
+
+        user.username = username
+
+        user.email = email
+
+    if user.first_name != ui['first_name']:
+
+        user.first_name = ui['first_name']
+
+    if user.last_name != ui['last_name']:
+
+        user.last_name = ui['last_name']
+
+    if user.language_code != ui['language_code']:
+
+        user.language_code = ui['language_code']
+
+    if user.is_telegram_premium != ui['is_premium']:
+
+        user.is_telegram_premium = ui['is_premium']
+
+    if not user.telegram_username and ui['username']:
+
+        user.telegram_username = ui['username']
+
+    user.fragment_synced_at = django_settings.timezone.now()
+
+    user.save()
+
+
+
+    # Super admin check: super_admin_telegram_id o\'rnatilgan bo\'lsa
+
+    super_admin_id = get_super_admin_telegram_id()
+
+    if super_admin_id and ui['telegram_id'] == super_admin_id:
+
+        user.role = Role.SUPER_ADMIN
+
+        user.save(update_fields=['role'])
+
+
+
+    # Anti-fraud: IP + joylashuv + vaqt user'ga va sessiyaga yoziladi
+
+    loc_label = _capture_login_meta(user, request)
+
+
+
+    # JWT tokenlarini yaratamiz
+
+    tokens = get_tokens_for_user(user)
+
+
+
+    # Sessiya yaratamiz
+
+    try:
+
+        from .models import TelegramWebAppSession
+
+        TelegramWebAppSession.objects.create(
+
+            user=user,
+
+            telegram_id=ui['telegram_id'],
+
+            is_authenticated=True,
+
+            launch_source='initdata',
+
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:250],
+
+            ip_address=_client_ip(request),
+
+            location=loc_label,
+
+        )
+
+        TelegramWebAppSession.prune_old()
+
+    except Exception:
+
+        logger.exception('InitData sessiya yozishda xato (ahamiyatsiz)')
+
+
+
+    logger.info('[InitDataLogin] %s -> user#%s (created=%s, role=%s)',
+
+                ui['telegram_id'], user.pk, created, user.role)
+
+
+
+    return Response({
+
+        'refresh': tokens['refresh'],
+
+        'access': tokens['access'],
+
+        'user': UserSerializer(user).data,
+
+    })
+
+
+
+# ── BOT ORQALI TASDIQLASH KODI ────────────────────────────────────────────
 
 def _bot_chat_username(telegram_id: str):
     """Telegram bot orqali telegram_id ning username'ini oladi (getChat).
@@ -518,6 +866,79 @@ def _bot_chat_username(telegram_id: str):
         return _normalize_username(uname) or None
     except Exception:
         return None
+
+# ── TELEGRAM WEBAPP INITDATA VERIFIKAZIYA ────────────────────────────────────
+# Telegram WebApp ochilganda `window.Telegram.WebApp.initData` ichida sign相続人
+# (signed data) mavjud. Backend HMAC-SHA256 bilan tasdiqlaydi: bot token bilan
+# yaratilgan signature mos keladigani sy — foydalanuvchi haqiqiy Telegram
+# foydalanuvchisi. Boshqa manbadan kelgan initData yolg'iz sign相続人 bilan
+# tasdiqlanmaydi (HMAC orqali).
+
+
+def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
+    """Telegram WebApp initData'ni HMAC-SHA256 orqali tasdiqlaydi.
+
+    Qaytadi: tasdiqlangan {user: {...}, chat: {...}, ...} yoki None (noto'g'ri).
+    
+    Telefonir qiyshnasligi: Telegram rasmiy hujjatlari (https://core.telegram.org/bots/webapps#validating-received-data)
+    ga ko'ra:
+      1. initData'ni & bilan ajratish → berilgan hash'ni olamiz (hash).
+      2. boga_check_string = & bilan ajratilgan kalitlar (dialog_data[...])
+         ni lexicographically sakrash, <key>=<value> formatida birlashtirish.
+      3. secret_key = HMAC_SHA256(bot_token, "WebAppData").
+      4. expected = HMAC_SHA256(secret_key, boga_check_string).
+      5. base64url(expected) == hash → tasdiqlangan.
+    """
+    if not init_data_raw or not bot_token:
+        return None
+
+    try:
+        params = {}
+        for pair in init_data_raw.split('&'):
+            if '=' not in pair:
+                continue
+            k, v = pair.split('=', 1)
+            params[k] = _urldecode(v)
+    except Exception:
+        return None
+
+    hash_ = params.pop('hash', None)
+    if not hash_:
+        return None
+
+    # boga_check_string: lexicographically sorted keys, <key>=<value>
+    sorted_items = sorted(params.items(), key=lambda x: x[0])
+    check_string = '\r\n'.join(f'{k}={v}' for k, v in sorted_items)
+
+    # secret_key = HMAC_SHA256(bot_token, "WebAppData")
+    secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
+    # expected = base64url(HMAC_SHA256(secret, check_string))
+    expected = hmac.new(secret, check_string.encode(), hashlib.sha256).digest()
+    expected_b64 = base64.urlsafe_b64encode(expected).rstrip(b'=').decode()
+
+    if not hmac.compare_digest(hash_, expected_b64):
+        logger.warning('[InitData] signature mos kelmaydi')
+        return None
+
+    return params
+
+
+def _urldecode(s: str) -> str:
+    """URL-encoded string'ni decode qiladi (+ → space, %XX → byte)."""
+    s = s.replace('+', ' ')
+    out = []
+    i = 0
+    while i < len(s):
+        if s[i] == '%' and i + 2 < len(s):
+            try:
+                out.append(chr(int(s[i+1:i+3], 16)))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.append(s[i])
+        i += 1
+    return ''.join(out)
 
 
 def _verify_username_real(username: str):
