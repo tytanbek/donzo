@@ -226,6 +226,22 @@ export const authAPI = {
     api.post('/auth/login-code/verify/', { username, code }),
   // Dev/testing uchun: rol bo'yicha avtomatik demo-foydalanuvchi.
   demoLogin: (role: string) => api.post('/auth/demo-login/', { role }),
+  // ── TELEGRAM WEBAPP AVTO-KIRISH (REAL LOGIN) ──
+  // Telegram ichida WebApp ochilganda `window.Telegram.WebApp.initData`
+  // ichida sign相続 (signed data) mavjud. Backend HMAC-SHA256 bilan
+  // tasdiqlaydi: bot token bilan yaratilgan signature mos keladigani —
+  // foydalanuvchi haqiqiy Telegram foydalanuvchisi.
+  // 
+  // Boshqa manbadan kelgan initData yolg'iz signature bilan tasdiqlanmaydi.
+  // 
+  // Qaytaradi: {access, refresh, user} — ya'ni JWT va foydalanuvchi ma'lumotlari.
+  // Agarga foydalanuvchi mavjud bo'lmasa — yangi mijoz yaratiladi (get_or_create).
+  // Agar foydalanuvchi mavjud bo'lsa — uning profili yangilanishi bilan kirish o'tadi.
+  // 
+  // Super admin: super_admin_telegram_id o'rnatilgan bo'lsa, shu ID'ga ega bo'lgan
+  // foydalanuvchi super_admin ga aylantiriladi (avtomatik).
+  initdataLogin: (initData: string) =>
+    api.post('/auth/initdata-login/', { init_data: initData }),
   profile: () => api.get('/auth/profile/'),
   updateProfile: (data: any) => api.patch('/auth/profile/', data),
   // Web App ochilganda Fragment API (getInfo) bilan profilni HOZIROQ
