@@ -45,3 +45,12 @@ backend/tsconfig.tsbuildinfo
 frontend/tsconfig.tsbuildinfo
 
 .vercel
+
+# Static/media files
+backend/static/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.webm
