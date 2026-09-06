@@ -537,16 +537,18 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
         return None
 
     # check_string: lexicographically sorted keys, <key>=<value>
+    # Telegram rasmiy hujjati: separator = '\n' (line feed) — '\r\n' emas!
+    # core.telegram.org/bots/webapps#validating-received-data
     sorted_items = sorted(params.items(), key=lambda x: x[0])
-    check_string = '\r\n'.join(f'{k}={v}' for k, v in sorted_items)
+    check_string = '\n'.join(f'{k}={v}' for k, v in sorted_items)
 
     # secret_key = HMAC_SHA256(bot_token, "WebAppData")
     secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
-    # expected = base64url(HMAC_SHA256(secret, check_string))
-    expected = hmac.new(secret, check_string.encode(), hashlib.sha256).digest()
-    expected_b64 = base64.urlsafe_b64encode(expected).rstrip(b'=').decode()
+    # Telegram hash'i HEX formatda (base64 emas!)
+    # https://gist.github.com/konstantin24121/49da5d8023532d66cc4db1136435a885
+    expected_hex = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
 
-    if not hmac.compare_digest(hash_, expected_b64):
+    if not hmac.compare_digest(hash_, expected_hex):
         logger.warning('[InitData] signature mos kelmaydi')
         return None
 
@@ -907,16 +909,17 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
         return None
 
     # boga_check_string: lexicographically sorted keys, <key>=<value>
+    # Telegram rasmiy hujjati: separator = '\n' (line feed) — '\r\n' emas!
     sorted_items = sorted(params.items(), key=lambda x: x[0])
-    check_string = '\r\n'.join(f'{k}={v}' for k, v in sorted_items)
+    check_string = '\n'.join(f'{k}={v}' for k, v in sorted_items)
 
     # secret_key = HMAC_SHA256(bot_token, "WebAppData")
     secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
-    # expected = base64url(HMAC_SHA256(secret, check_string))
-    expected = hmac.new(secret, check_string.encode(), hashlib.sha256).digest()
-    expected_b64 = base64.urlsafe_b64encode(expected).rstrip(b'=').decode()
+    # Telegram hash'i HEX formatda (base64 emas!)
+    # https://gist.github.com/konstantin24121/49da5d8023532d66cc4db1136435a885
+    expected_hex = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
 
-    if not hmac.compare_digest(hash_, expected_b64):
+    if not hmac.compare_digest(hash_, expected_hex):
         logger.warning('[InitData] signature mos kelmaydi')
         return None
 
