@@ -606,6 +606,16 @@ def _initdata_user_info(params: dict) -> dict:
 @permission_classes([permissions.AllowAny])
 @throttle_classes([ScopedRateThrottle])
 def initdata_login(request):
+    import traceback as _tb
+    try:
+        return _initdata_login_inner(request)
+    except Exception as exc:
+        tb = _tb.format_exc()
+        logger.exception('[InitDataLogin] 500: %s', exc)
+        return Response({'detail': str(exc), 'traceback': tb[-800:]}, status=500)
+
+
+def _initdata_login_inner(request):
     """
     POST /api/v1/auth/initdata-login/
 
