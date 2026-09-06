@@ -711,23 +711,27 @@ def _initdata_login_inner(request):
 
     # Foydalanuvchini topamiz/yaratamiz.
 
-    # MUHIM: telegram_id bo'yicha topilmasa — username bo'yicha ham qidiramiz.
+    # Tartib: 1) telegram_id bo'yicha, 2) username bo'yicha.
 
-    # Fragment-login orqali yaratilgan user'da telegram_id bo'lmasligi mumkin;
+    # Birinchi topilgan user ishlatiladi — lekin username O'ZGARTIRILMAYDI
 
-    # faqat get_or_create(telegram_id=...) ishlatilsa, shu username'li yangi
+    # (unique conflict oldini olish uchun). Agar boshqa user allaqachon shu
 
-    # user yaratishga uriniladi va username UNIQUE conflict → 500 (IntegrityError).
+    # telegram_id ga tegishli bo'lsa — shu user bilan davom etamiz.
 
-    user = (
+    # Faqat yangi user yaratilganda username o'rnatiladi.
 
-        User.objects.filter(telegram_id=ui['telegram_id']).first()
+    user = User.objects.filter(telegram_id=ui['telegram_id']).first()
 
-        or User.objects.filter(username__iexact=username).first()
+    if user is None:
 
-        or User.objects.filter(telegram_username__iexact=username).first()
+        user = (
 
-    )
+            User.objects.filter(username__iexact=username).first()
+
+            or User.objects.filter(telegram_username__iexact=username).first()
+
+        )
 
     created = user is None
 
@@ -757,13 +761,7 @@ def _initdata_login_inner(request):
 
 
 
-    # Agar username o\'zgargan bo\'lsa — yangilaymiz
-
-    if user.username != username:
-
-        user.username = username
-
-        user.email = email
+    # Profil ma'lumotlarini yangilaymiz (username EMAS — unique conflict xavfi).
 
     if user.first_name != ui['first_name']:
 
