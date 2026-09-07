@@ -643,6 +643,8 @@ def debug_token_info(request):
     })
 
 
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
 def initdata_login(request):
     """
     POST /api/v1/auth/initdata-login/
