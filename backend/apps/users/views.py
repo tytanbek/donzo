@@ -638,6 +638,7 @@ def initdata_login(request):
     """
     init_data_raw = (request.data.get('init_data') or '').strip()
     if not init_data_raw:
+        logger.warning('[InitDataLogin] init_data bo\'sh — Telegram tashqarida ochilgan bo\'lishi mumkin')
         return Response(
 
             {'detail': 'init_data yetishmayapti'},
@@ -668,12 +669,8 @@ def initdata_login(request):
 
     # initData'ni tasdiqlaymiz
 
-    params = _verify_initdata(init_data_raw, bot_token)
-
-    if not params:
-
-        logger.info('[InitDataLogin] noto\'g\'ri initData')
-
+    params = _verify_initdata(init_data_raw, bot_token)    if not params:
+        logger.warning('[InitDataLogin] initData tasdiqlanmadi — hash yoki format xatosi, initData length=%d', len(init_data_raw))
         return Response(
 
             {'detail': 'Kirish tasdiqlanmadi'},

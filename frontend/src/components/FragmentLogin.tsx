@@ -28,6 +28,7 @@ export default function FragmentLogin() {
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const attemptedRef = useRef(false);
+  const autoRetryRef = useRef(false);
 
   const goToPanel = (role: string) => {
     if (role === 'super_admin' || role === 'admin') router.push('/admin');
@@ -46,21 +47,44 @@ export default function FragmentLogin() {
       localStorage.setItem('access_token', access);
       localStorage.setItem('refresh_token', refresh);
       // Anti-fraud metadata — fire-and-forget (login o'tgan, ahamiyatsiz).
+      // try/catch bilan o'rab qo'yamiz: deviceInfo xatosi loginni bloklamasligi kerak.
       try {
         const tg = (window as any).Telegram?.WebApp;
-        await authAPI.deviceInfo({
+        authAPI.deviceInfo({
           platform: String(tg?.platform || navigator.platform || '').slice(0, 100),
           language: navigator.language || '',
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
           user_agent: navigator.userAgent || '',
-        });
+        }).catch(() => {});
       } catch { /* ahamiyatsiz */ }
       setUser(user);
       setAuthChecked(true);
       goToPanel(user.role);
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      setError(detail || 'Avtomatik kirish amalga oshmadi. Qayta urinib ko\'ring.');
+      let detail = e?.response?.data?.detail || '';
+      if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+        detail = 'Server javob bermadi (sovuq start). Qayta urinib ko\'ring.';
+      } else if (!e?.response) {
+        detail = 'Internet aloqasi yo\'q. Qayta urinib ko\'ring.';
+      } else if (e?.response?.status === 403) {
+        detail = detail || 'Telegram tasdiqlanmadi. Bot orqali WebApp\'ni qayta oching.';
+      } else if (e?.response?.status >= 500) {
+        detail = 'Server xatosi. Biroz kutib qayta urinib ko\'ring.';
+      }
+      if (!detail) detail = 'Avtomatik kirish amalga oshmadi. Qayta urinib ko\'ring.';
+      // Cold start yoki tarmoq xatosi bo'lsa — 3 soniyadan keyin avtomatik qayta urinish (1 marta)
+      const isTransient = e?.code === 'ECONNABORTED' || !e?.response || (e?.response?.status >= 500);
+      if (isTransient && !autoRetryRef.current) {
+        autoRetryRef.current = true;
+        setState('checking');
+        setError(null);
+        setTimeout(() => {
+          const tg2 = (window as any).Telegram?.WebApp;
+          if (tg2?.initData) tryAutoLogin(tg2.initData);
+        }, 3000);
+        return;
+      }
+      setError(detail);
       setState('error');
     }
   };
