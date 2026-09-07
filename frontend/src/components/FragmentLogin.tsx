@@ -90,8 +90,9 @@ export default function FragmentLogin() {
   };
 
   // ── AVTOMATIK KIRISH ────────────────────────────────────────────────────
-  // Telegram SDK async yuklanadi — initData paydo bo'lishini ~4s kutamiz.
-  // Topilmasa (Telegram ichida emas) → "Telegram orqali oching" ekrani.
+  // Telegram SDK async yuklanadi — initData paydo bo'lishini 10s gacha kutamiz.
+  // Telegram WebApp ochilganda SDK biroz kechikishi mumkin (network, CDN).
+  // 10s yetarli — bundan keyin Telegram tashqarida ochilgan.
   useEffect(() => {
     if (attemptedRef.current) return;
     attemptedRef.current = true;
@@ -106,14 +107,14 @@ export default function FragmentLogin() {
         tryAutoLogin(tg.initData);
         return;
       }
-      if (tries >= 30) {
-        if (timer) window.clearInterval(timer); // ~3s — SDK tez yuklanadi
+      // 100ms × 100 = 10s — Telegram SDK yuklanishini kutish
+      if (tries >= 100) {
+        if (timer) window.clearInterval(timer);
         setState('outside');
       }
     };
     timer = window.setInterval(check, 100);
     check();
-    // retryKey o'zgarsa (Qayta urinish tugmasi) effect qayta ishga tushadi
   }, [retryKey]);
 
   const retry = () => {

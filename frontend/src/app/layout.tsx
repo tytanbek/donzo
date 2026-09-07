@@ -70,14 +70,37 @@ export default function RootLayout({
       return;
     }
     // Token bor — profilni sinxronlashtirish.
+    // Agar 403/401 qaytarsa — refresh token bilan yangilashga urinamiz.
     authAPI.profile()
       .then((res) => {
         if (cancelled) return;
         setUser(res.data);
         setAuthChecked(true);
       })
-      .catch(() => {
-        // Token eskirgan/noto'g'ri — tozalab, login ekraniga qaytamiz.
+      .catch(async () => {
+        // Token eskirgan — refresh bilan yangilashga urinamiz.
+        try {
+          const refreshToken = localStorage.getItem('refresh_token');
+          if (refreshToken) {
+            const { default: axios } = await import('axios');
+            const { data } = await axios.post(
+              `${process.env.NEXT_PUBLIC_API_URL || 'https://donzo-backend-lzmd.onrender.com/api/v1'}/auth/token/refresh/`,
+              { refresh: refreshToken }
+            );
+            if (data.access) {
+              localStorage.setItem('access_token', data.access);
+              if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
+              // Yangilangan token bilan qayta urinamiz.
+              const profileRes = await authAPI.profile();
+              if (!cancelled) {
+                setUser(profileRes.data);
+                setAuthChecked(true);
+              }
+              return;
+            }
+          }
+        } catch { /* refresh muvaffaqiyatsiz */ }
+        // Refresh ham ishlamadi — tozalab, login ekraniga qaytamiz.
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         if (!cancelled) {

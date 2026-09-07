@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 
 const initdataLoginMock = vi.fn();
 vi.mock('@/lib/api', () => ({
@@ -24,8 +24,9 @@ vi.mock('next/navigation', () => ({
 
 import FragmentLogin from './FragmentLogin';
 
-describe('FragmentLogin (AVTO-KIRISH — username YO\'Q)', () => {
+describe('FragmentLogin (AVTO-KIRISH)', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     initdataLoginMock.mockReset();
     setUserMock.mockReset();
     setAuthCheckedMock.mockReset();
@@ -34,26 +35,36 @@ describe('FragmentLogin (AVTO-KIRISH — username YO\'Q)', () => {
     delete (window as any).Telegram;
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('hech qachon username input ko\'rsatmaydi', async () => {
     render(<FragmentLogin />);
-    // ~3s kutish — SDK yuklanmagan → "Telegram orqali" ekrani chiqadi
+    // Fake timer bilan 10s ni tezlashtiramiz
+    await act(async () => {
+      vi.advanceTimersByTime(11000);
+    });
     await waitFor(() => {
       expect(screen.getByText(/Kirish faqat Telegram orqali/i)).toBeTruthy();
-    }, { timeout: 8000 });
+    });
     expect(screen.queryByPlaceholderText('username')).toBeNull();
     expect(screen.queryByRole('button', { name: /Davom etish/i })).toBeNull();
   });
 
   it('Telegramdan tashqarida — botni ochish tugmasi ko\'rinadi', async () => {
     render(<FragmentLogin />);
+    await act(async () => {
+      vi.advanceTimersByTime(11000);
+    });
     await waitFor(() => {
       expect(screen.getByText(/Kirish faqat Telegram orqali/i)).toBeTruthy();
-    }, { timeout: 8000 });
+    });
     const btn = screen.getByRole('link', { name: /Bot'ni ochish/i });
     expect(btn.getAttribute('href')).toBe('https://t.me/DONZOROBOT');
   });
 
-  it('Telegram ichida initData bor — avtomatik kiradi, username so\'ralmaydi', async () => {
+  it('Telegram ichida initData bor — avtomatik kiradi', async () => {
     (window as any).Telegram = { WebApp: { initData: 'query_id=abc&user=%7B%22id%22%3A42%7D&hash=xyz' } };
     initdataLoginMock.mockResolvedValue({
       data: {
@@ -63,6 +74,7 @@ describe('FragmentLogin (AVTO-KIRISH — username YO\'Q)', () => {
     });
     render(<FragmentLogin />);
 
+    // initData topilganda darhol ishlaydi — advance kerak emas
     await waitFor(() => {
       expect(initdataLoginMock).toHaveBeenCalledWith('query_id=abc&user=%7B%22id%22%3A42%7D&hash=xyz');
     });
@@ -88,7 +100,7 @@ describe('FragmentLogin (AVTO-KIRISH — username YO\'Q)', () => {
     });
   });
 
-  it('xato bo\'lsa — Qayta urinish tugmasi chiqadi va qayta urinadi', async () => {
+  it('xato bo\'lsa — Qayta urinish tugmasi chiqadi', async () => {
     (window as any).Telegram = { WebApp: { initData: 'hash=x' } };
     initdataLoginMock
       .mockRejectedValueOnce({ response: { data: { detail: 'Kirish tasdiqlanmadi' } } })
