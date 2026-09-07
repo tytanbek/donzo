@@ -58,10 +58,10 @@ export default function RootLayout({
   );
 
   // ── AUTH AVTO-KIRISH ──────────────────────────────────────────────────────
-  // 1. Token bor → profil avtomatik yuklanadi (user id orqali aniqlanadi).
+  // 1. Token bor → profil avtomatik yuklanadi (8s timeout bilan).
   // 2. Token yo'q → authChecked DARHOL true bo'ladi — FragmentLogin ekrani
-  //    avto-kirishni o'zi bajaradi (Telegram initData tekshiruvi, retry,
-  //    xatolik UI). Hech qachon cheksiz loading spinner bo'lmaydi.
+  //    avto-kirishni o'zi bajaradi.
+  // 3. Timeout: backend tushsa 8s kutib, token tozalab FragmentLogin ga o'tadi.
   useEffect(() => {
     let cancelled = false;
     const token = localStorage.getItem('access_token');
@@ -69,48 +69,30 @@ export default function RootLayout({
       if (!cancelled) setAuthChecked(true);
       return;
     }
-    // Token bor — profilni sinxronlashtirish.
-    // Agar 403/401 qaytarsa — refresh token bilan yangilashga urinamiz.
-    authAPI.profile()
-      .then((res) => {
+
+    // 8 soniya timeout — backend cold start uchun yetarli, lekin 30s kutmaslik.
+    const TIMEOUT_MS = 8000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('profile_timeout')), TIMEOUT_MS)
+    );
+
+    const fetchProfile = async () => {
+      try {
+        const res = await Promise.race([authAPI.profile(), timeoutPromise]);
         if (cancelled) return;
         setUser(res.data);
         setAuthChecked(true);
-      })
-      .catch(async () => {
-        // Token eskirgan — refresh bilan yangilashga urinamiz.
-        try {
-          const refreshToken = localStorage.getItem('refresh_token');
-          if (refreshToken) {
-            const { default: axios } = await import('axios');
-            const { data } = await axios.post(
-              `${process.env.NEXT_PUBLIC_API_URL || 'https://donzo-backend-lzmd.onrender.com/api/v1'}/auth/token/refresh/`,
-              { refresh: refreshToken }
-            );
-            if (data.access) {
-              localStorage.setItem('access_token', data.access);
-              if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
-              // Yangilangan token bilan qayta urinamiz.
-              const profileRes = await authAPI.profile();
-              if (!cancelled) {
-                setUser(profileRes.data);
-                setAuthChecked(true);
-              }
-              return;
-            }
-          }
-        } catch { /* refresh muvaffaqiyatsiz */ }
-        // Refresh ham ishlamadi — tozalab, login ekraniga qaytamiz.
+      } catch (e: any) {
+        if (cancelled) return;
+        // Timeout yoki xato — token tozalab, login ekraniga qaytamiz.
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        if (!cancelled) {
-          setUser(null);
-          setAuthChecked(true);
-        }
-      });
-    return () => {
-      cancelled = true;
+        setUser(null);
+        setAuthChecked(true);
+      }
     };
+    fetchProfile();
+    return () => { cancelled = true; };
   }, [setUser, setAuthChecked]);
 
   // ── Rol bo'yicha yo'naltirish ────────────────────────────────────────────
