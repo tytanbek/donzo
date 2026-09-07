@@ -56,7 +56,7 @@ if SECRET_KEY == 'dev-secret-key-change-in-production':
 # hostname and never match.
 # This wildcard is intentionally DEBUG-only: with DEBUG=False the env list is
 # used verbatim (no wildcard), avoiding host-header injection in production.
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com').split(',')
 if DEBUG:
     ALLOWED_HOSTS = ALLOWED_HOSTS + ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.app']
 
