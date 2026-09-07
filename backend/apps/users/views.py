@@ -560,7 +560,13 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
     expected_hex = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(hash_, expected_hex):
-        logger.warning('[InitData] signature mos kelmaydi')
+        logger.warning(
+            '[InitData] SIG FAIL | received=%s | expected=%s | check_len=%d | bot_len=%d',
+            (hash_ or 'None')[:16],
+            (expected_hex or 'None')[:16],
+            len(check_string),
+            len(bot_token),
+        )
         return None
 
     return params
@@ -652,6 +658,7 @@ def initdata_login(request):
     # Bot token ni so'ramiz (Settings'dan)
 
     bot_token = (Setting.get_setting('telegram_bot_token', '') or '').strip()
+    logger.info('[InitDataLogin] bot_token loaded: len=%d starts=%s', len(bot_token), bot_token[:10] if bot_token else 'EMPTY')
 
     if not bot_token:
 
@@ -952,7 +959,13 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
     expected_hex = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(hash_, expected_hex):
-        logger.warning('[InitData] signature mos kelmaydi')
+        logger.warning(
+            '[InitData] SIG FAIL | received=%s | expected=%s | check_len=%d | bot_len=%d',
+            (hash_ or 'None')[:16],
+            (expected_hex or 'None')[:16],
+            len(check_string),
+            len(bot_token),
+        )
         return None
 
     return params
