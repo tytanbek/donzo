@@ -622,6 +622,27 @@ def _initdata_user_info(params: dict) -> dict:
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 @throttle_classes([ScopedRateThrottle])
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def debug_token_info(request):
+    """DEBUG: bot token haqida ma'lumot — keyin olib tashlash kerak!"""
+    import hmac, hashlib
+    bot_token = (Setting.get_setting('telegram_bot_token', '') or '').strip()
+    token_len = len(bot_token)
+    token_first10 = bot_token[:10] if bot_token else 'EMPTY'
+    # Token to'g'ri decrypt bo'lganini tekshirish
+    has_colon = ':' in bot_token
+    secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest() if bot_token else b''
+    secret_hex = secret[:8].hex() if secret else 'N/A'
+    return Response({
+        'token_len': token_len,
+        'token_first10': token_first10,
+        'has_colon': has_colon,
+        'secret_first8': secret_hex,
+        'note': 'REMOVE THIS ENDPOINT IN PRODUCTION!',
+    })
+
+
 def initdata_login(request):
     """
     POST /api/v1/auth/initdata-login/

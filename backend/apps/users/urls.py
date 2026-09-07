@@ -3,6 +3,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
 urlpatterns = [
+    # DEBUG — faqat vaqtinchalik, keyin olib tashlash kerak!
+    path('debug-token/', views.debug_token_info, name='debug-token'),
+
     # ── AVTO-KIRISH (Telegram ichida) ──
     # Telegram WebApp initData bilan avtomatik kirish (HMAC-SHA256 tasdiqlash).
     # Foydalanuvchi hech narsa yozish shart emas — initData avtomatik.
