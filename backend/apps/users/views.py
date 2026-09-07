@@ -658,7 +658,8 @@ def initdata_login(request):
     # Bot token ni so'ramiz (Settings'dan)
 
     bot_token = (Setting.get_setting('telegram_bot_token', '') or '').strip()
-    logger.info('[InitDataLogin] bot_token loaded: len=%d starts=%s', len(bot_token), bot_token[:10] if bot_token else 'EMPTY')
+    logger.info('[InitDataLogin] bot_token: len=%d first10=%s', len(bot_token), bot_token[:10] if bot_token else 'EMPTY')
+    logger.info('[InitDataLogin] init_data: len=%d first100=%s', len(init_data_raw), init_data_raw[:100])
 
     if not bot_token:
 
