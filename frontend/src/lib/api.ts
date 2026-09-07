@@ -10,7 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v
 // MUHIM: faqat JORIY (asosiy) backend manzili ishlatiladi — eski
 // `donzo-backend.onrender.com` backend'da initdata-login yo'q edi va
 // localStorage'da saqlanib qolsa auto-login abadiy ishlamay qolardi.
-const FALLBACK_BASE = 'https://donzo-backend-lzmd.onrender.com/api/v1';
+const FALLBACK_BASE = 'https://donzo-backend-82up.onrender.com/api/v1';
 
 function effectiveBase(): string {
   if (typeof window !== 'undefined') {
