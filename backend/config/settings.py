@@ -139,6 +139,16 @@ MIDDLEWARE = [
     'apps.settings_app.middleware.MaintenanceModeMiddleware',
 ]
 
+# ── Cache: in-process LLOC memcache for public catalogue endpoints.
+# Avoids DB round-trips on every page load (services, categories, banners).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'donzo-public-cache',
+        'TIMEOUT': 30,  # 30 soniya — yetarli, admin o'zgarishlari tezda ko'rinadi
+    }
+}
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [

@@ -13,12 +13,20 @@ from apps.users.permissions import IsAdmin
 # serializer esa annotatsiyani o'qiydi (fallback: count()).
 
 
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+
+
 class CategoryListView(generics.ListAPIView):
     queryset = Category.objects.filter(is_active=True).annotate(
         services_count=Count('services', filter=Q(services__is_active=True), distinct=True)
     )
     serializer_class = CategorySerializer
     permission_classes = [permissions.AllowAny]
+
+    @method_decorator(cache_page(30))
+    def get(self, *args, **kwargs):
+        return super().get(*args, **kwargs)
 
 
 class ServiceListView(generics.ListAPIView):
@@ -36,6 +44,10 @@ class ServiceListView(generics.ListAPIView):
     filterset_fields = ['category']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
+
+    @method_decorator(cache_page(30))
+    def get(self, *args, **kwargs):
+        return super().get(*args, **kwargs)
 
 
 class ServiceDetailView(generics.RetrieveAPIView):
