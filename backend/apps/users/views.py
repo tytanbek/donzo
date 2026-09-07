@@ -669,7 +669,8 @@ def initdata_login(request):
 
     # initData'ni tasdiqlaymiz
 
-    params = _verify_initdata(init_data_raw, bot_token)    if not params:
+    params = _verify_initdata(init_data_raw, bot_token)
+    if not params:
         logger.warning('[InitDataLogin] initData tasdiqlanmadi — hash yoki format xatosi, initData length=%d', len(init_data_raw))
         return Response(
 
