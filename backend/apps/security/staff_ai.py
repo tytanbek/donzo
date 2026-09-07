@@ -2560,16 +2560,22 @@ QOIDALAR:
 """
 
 _MARKETING_FALLBACK = (
-    "🎭 sirli odam sirni aytmaydi — lekin donzoni ayta olaman. donzoda tekshir.",
-    "🌙 tuni bilan ishlaydi, senga 1 daqiqada yetkazadi. donzo — sirli platforma.",
-    "⚡ haliham o'ylayapsizmi? donzo allaqachon tayyor. siz o'ylab o'tirgancha, boshqalar oladi.",
-    "🎮 o'yinda yengilmoqchimisan? donzo'dan diamant/UC olishning sirini bilasanmi? donzoda ol.",
-    "🔥 donzo — sirli narxlar. boshqada ko'rmaysan, bu yerda bor. donzoda tekshir.",
-    "💎 premium kerakmi? donzo'da arzon va tez. sirli odam maslahat beradi.",
-    "🏆 donzo bilan g'alaba qozon. o'yin rebeting oshadi, donating arzonlashadi.",
-    "🎯 maqsadga yo'naltirilgan platforma. donzo — narxlar ham, tezlik ham, sifat ham.",
-    "🚀 donzo'da yangilik bor — endi hamma o'yin uchun donat qilish mumkin.",
-    "❄️ donzo — sovuq hisob-kitob, lekin iliq xizmat. arzon narx, tez yetkazish.",
+    "🎭 kim dedi donat qimmat deb? donzoda narxni ko'rsang, o'zingga ishonmaysan. sirli haqiqat.",
+    "🌙 meni kechqurun ko'rishadi, lekin men doim ishlayman. donzo — tun ham, kun ham. 1 daqiqada yetkazadi.",
+    "💢 boshqalarda 3 kun kutasan, bizda 1 daqiqada tayyor. donzoda sinab ko'r — keyin boshqaga qaramaysan.",
+    "🔥 bitta qo'ng'iroq — bitta donat. donzo shunchaki platforma emas, bu sirli qudrat.",
+    "🧠 PUBG UC necha so'm deb o'ylaysiz? donzoda tekshirib ko'ring — javob sizni hayajonga soladi.",
+    "💨 Free Fire diamantini qancha berishadi? donzodagi narxni ko'rganingizdan keyin, boshqa joyga qaramaysiz.",
+    "👑 Telegram Premium kerakmi? donzoda 1 daqiqada tayyor. Boshqada kunlab kutasan.",
+    "💪 o'yinda yengilmoqchimisan? donzoning sirini bilasanmi? bitta bosish — o'yin o'zgaradi.",
+    "💔 do'stingizni yengdingizmi? donzo bilan uni ham yengishingiz mumkin. donat qiling — kechirim so'ramang.",
+    "🌟 donzoning sirli narxlari bor — boshqada ko'rmaysan. bu sirni faqat bilimdonlar biladi.",
+    "🌦️ sovuq tun, iliq donat. donzo bilan hech qachon yolg'iz qolmaysiz.",
+    "💧 ter to'kdingizmi? donzo bilan teringizni quritib, donat oling. 1 daqiqada — tayyor.",
+    "🧁 donzo bilan pulni tejashni o'rganing. boshqada 100 so'mdan ortiq qolasiz, bizda arzonroq.",
+    "😎 donat qilishni oson qildik — telefonni qo'lingizga oling, donzoni oching, tayyor. qolganini biz qilamiz.",
+    "🏺f bir qadam oldinda turing — donzo bilan. boshqalar hali o'ylab turganda, siz allaqachon yengdingiz.",
+    "🌈 rang-barang o'yin, rang-barang donat. donzoda hamma rang bor — siz faqat tanlang.",
 )
 
 

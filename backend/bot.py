@@ -1672,16 +1672,22 @@ def _marketing_ad() -> str:
     """DONZO kreativ reklamasi — sirli shaxs sifatida, sotib olishga da'vat.
     Har safar yangi, takrorlanmas reklama. Mijozni qiziqtiradigan, sirli ohangda."""
     ads = [
-        "🎭 Donzo — sirli platforma. Narxlarni ko'rsang, ishonmay qolasan. donzoda tekshirib ko'r.",
-        "🌙 Donzo — tuni bilan ishlaydi, senga 1 daqiqada yetkazadi. Boshqa joyda kutasan, bu yerda olasan.",
-        "⚡ Donzo'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
-        "🎮 O'yinda yengilmoqchimisan? Donzo'dan diamant/UC olishning sirini bilasanmi? donzoda ol — o'yin o'zgarsin.",
-        "🔥 Donzo — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
-        "💎 Premium kerakmi? Donzo'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
-        "🏆 Donzo bilan g'alaba qozon. O'yin rebating oshadi, donating arzonlashadi. Sinab ko'r — afsus qilmaysan.",
-        "🎯 Donzo — maqsadga yo'naltirilgan platforma. Narxlar ham, tezlik ham, sifat ham — hammasi o'z joyida.",
-        "🚀 Donzo'da yangilik bor — endi hamma o'yin uchun donat qilish mumkin. Boshqa joyda topa olmaysan.",
-        "❄️ Donzo — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
+        "🎭 kim dedi donat qimmat deb? donzoda narxni ko'rsang, o'zingga ishonmaysan. sirli haqiqat.",
+        "🌙 meni kechqurun ko'rishadi, lekin men doim ishlayman. donzo — tun ham, kun ham. 1 daqiqada yetkazadi.",
+        "💢 boshqalarda 3 kun kutasan, bizda 1 daqiqada tayyor. donzoda sinab ko'r — keyin boshqaga qaramaysan.",
+        "🔥 bitta qo'ng'iroq — bitta donat. donzo shunchaki platforma emas, bu sirli qudrat.",
+        "🧠 PUBG UC necha so'm deb o'ylaysiz? donzoda tekshirib ko'ring — javob sizni hayajonga soladi.",
+        "💨 Free Fire diamantini qancha berishadi? donzodagi narxni ko'rganingizdan keyin, boshqa joyga qaramaysiz.",
+        "👑 Telegram Premium kerakmi? donzoda 1 daqiqada tayyor. Boshqada kunlab kutasan.",
+        "💪 o'yinda yengilmoqchimisan? donzoning sirini bilasanmi? bitta bosish — o'yin o'zgaradi.",
+        "💔 do'stingizni yengdingizmi? donzo bilan uni ham yengishingiz mumkin. donat qiling — kechirim so'ramang.",
+        "🌟 donzoning sirli narxlari bor — boshqada ko'rmaysan. bu sirni faqat bilimdonlar biladi.",
+        "🌦️ sovuq tun, iliq donat. donzo bilan hech qachon yolg'iz qolmaysiz.",
+        "💧 ter to'kdingizmi? donzo bilan teringizni quritib, donat oling. 1 daqiqada — tayyor.",
+        "🧁 donzo bilan pulni tejashni o'rganing. boshqada 100 so'mdan ortiq qolasiz, bizda arzonroq.",
+        "😎 donat qilishni oson qildik — telefonni qo'lingizga oling, donzoni oching, tayyor. qolganini biz qilamiz.",
+        "🏺f bir qadam oldinda turing — donzo bilan. boshqalar hali o'ylab turganda, siz allaqachon yengdingiz.",
+        "🌈 rang-barang o'yin, rang-barang donat. donzoda hamma rang bor — siz faqat tanlang.",
     ]
     return random.choice(ads)
 
