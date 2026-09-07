@@ -403,7 +403,7 @@ def _send_daily_marketing():
             bot_username = 'DONZOROBOT'
         # Creative reklama — sirli shaxs uslubida, sotib olishga da'vat bilan
         creative_ads = [
-            "🎭 DONZO — sirli platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon tayyor turaman.",
+            "🎭 DONZO — sirli va mehribon platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon yordamingizda turaman.",
             "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
             "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
             "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
@@ -484,7 +484,7 @@ def _send_creative_ad_to_groups():
         if not cid or cid in skip:
             return
         creative_msgs = [
-            "🎭 DONZO — sirli platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon tayyor turaman. donzoda tekshirib ko'ring.",
+            "🎭 DONZO — sirli va mehribon platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon yordamingizda turaman. donzoda tekshirib ko'ring.",
             "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
             "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
             "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
@@ -1245,7 +1245,7 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     promo_image = 'https://files.catbox.moe/wyrjmj.png'
     caption = (
-        '🎭 <b>DONZO</b> — sirli platforma.\n\n'
+        '🎭 <b>DONZO</b> — sirli va mehribon platforma.\n\n'
         'Sevimli o\'yinglaringiz uchun <b>TEZ, XAVFSIZ VA QULAY</b> top-up xizmati!\n\n'
         '⚡ <b>PUBG Mobile</b> • <b>Mobile Legends</b> • <b>Free Fire</b>\n'
         '💣 <b>Call of Duty</b> • <b>Genshin Impact</b> • <b>Valorant</b>\n\n'
@@ -1672,10 +1672,10 @@ def _marketing_ad() -> str:
     """DONZO kreativ reklamasi — sirli shaxs sifatida, sotib olishga da'vat.
     Har safar yangi, takrorlanmas reklama. Mijozni qiziqtiradigan, sirli ohangda."""
     ads = [
-        "🎭 kim dedi donat qimmat deb? donzoda narxni ko'rsang, o'zingga ishonmaysan. sirli haqiqat.",
+        "🎭 kimga dedingiz donat qimmat deb? donzoda narxni ko'rsang, o'zingga ishonmaysan. sirli haqiqat.",
         "🌙 meni kechqurun ko'rishadi, lekin men doim ishlayman. donzo — tun ham, kun ham. 1 daqiqada yetkazadi.",
         "💢 boshqalarda 3 kun kutasan, bizda 1 daqiqada tayyor. donzoda sinab ko'r — keyin boshqaga qaramaysan.",
-        "🔥 bitta qo'ng'iroq — bitta donat. donzo shunchaki platforma emas, bu sirli qudrat.",
+        "🔥 bitta qo'ng'iroq — bitta donat. donzo sizning sirli do'stingiz.",
         "🧠 PUBG UC necha so'm deb o'ylaysiz? donzoda tekshirib ko'ring — javob sizni hayajonga soladi.",
         "💨 Free Fire diamantini qancha berishadi? donzodagi narxni ko'rganingizdan keyin, boshqa joyga qaramaysiz.",
         "👑 Telegram Premium kerakmi? donzoda 1 daqiqada tayyor. Boshqada kunlab kutasan.",
@@ -1844,9 +1844,9 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not ad:
             return
         welcome = (
-            "🎭 *DONZO* — meni sezdingizmi?\n\n"
-            "Men sirli platformaman. Siz o'yinlarda yengilmoqchi bo'lganingizda, "
-            "men allaqachon tayyor turaman. PUBG, Free Fire, Telegram Premium — "
+            "🎭 *DONZO* — salom! meni sezdingizmi?\n\n"
+            "Men sirli va mehribon platformaman. Siz o'yinlarda yengilmoqchi bo'lganingizda, "
+            "men allaqachon yordamingizda turaman. PUBG, Free Fire, Telegram Premium — "
             "hammasi 1 daqiqada.\n\n"
             "Savolingiz bo'lsa — menga yozing. Men javob beraman. 🌙\n\n"
             + ad
