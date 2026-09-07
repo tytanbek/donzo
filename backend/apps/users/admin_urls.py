@@ -9,7 +9,7 @@ from datetime import timedelta, date
 from .models import User
 from .serializers import UserSerializer, AdminUserSerializer
 from .permissions import IsAdmin, IsSuperAdmin
-from .referral_views import admin_referral_stats
+from .referral_views import admin_referral_stats, admin_all_referrals, admin_activate_premium_code, admin_create_premium_code
 from .crm_views import admin_crm_stats, admin_reset_sales_stats
 
 
@@ -730,4 +730,7 @@ urlpatterns = [
     path('crm/stats/', admin_crm_stats, name='admin-crm-stats'),
     path('crm/reset-stats/', admin_reset_sales_stats, name='admin-crm-reset-stats'),
     path('referrals/stats/', admin_referral_stats, name='admin-referral-stats'),
+    path('referrals/all/', admin_all_referrals, name='admin-all-referrals'),
+    path('referrals/activate-code/', admin_activate_premium_code, name='admin-activate-premium-code'),
+    path('referrals/create-code/', admin_create_premium_code, name='admin-create-premium-code'),
 ]

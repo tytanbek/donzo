@@ -379,6 +379,14 @@ export const referralAPI = {
   stats: () => api.get('/auth/referrals/stats/'),
   claimBonus: () => api.post('/auth/referrals/claim-bonus/', {}),
   applyCode: (code: string) => api.post('/auth/referrals/apply-code/', { referral_code: code }),
+  shareContent: () => api.get('/auth/referrals/share-content/'),
+  banner: () => api.get('/auth/referrals/banner/'),
+  premiumCodes: () => api.get('/auth/referrals/premium-codes/'),
+  activateCode: (code: string) => api.post('/auth/referrals/premium-codes/activate/', { code }),
+  // Admin
+  adminAll: () => api.get('/admin/referrals/all/'),
+  adminActivateCode: (code: string, username: string) => api.post('/admin/referrals/activate-code/', { code, username }),
+  adminCreateCode: (username: string) => api.post('/admin/referrals/create-code/', { username }),
 };
 
 // Order Stats

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FiCopy, FiUsers, FiDollarSign, FiGift, FiTrendingUp, FiAward, FiExternalLink } from 'react-icons/fi';
+import { FiCopy, FiUsers, FiDollarSign, FiGift, FiTrendingUp, FiAward, FiExternalLink, FiShare2, FiMessageCircle, FiCheckCircle } from 'react-icons/fi';
 import { referralAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -19,6 +19,9 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
   const [showReferrals, setShowReferrals] = useState(false);
   const [applyCode, setApplyCode] = useState('');
   const [isApplying, setIsApplying] = useState(false);
+  const [shareContent, setShareContent] = useState<any>(null);
+  const [showShare, setShowShare] = useState(false);
+  const [premiumCodes, setPremiumCodes] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -43,6 +46,43 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
     } catch (e) {
       toast.error('Referallarni yuklashda xatolik');
     }
+  };
+
+  const fetchShareContent = async () => {
+    try {
+      const res = await referralAPI.shareContent();
+      setShareContent(res.data);
+    } catch (e) { /* silent */ }
+  };
+
+  const fetchPremiumCodes = async () => {
+    try {
+      const res = await referralAPI.premiumCodes();
+      setPremiumCodes(res.data.results || []);
+    } catch (e) { /* silent */ }
+  };
+
+  const handleShare = async () => {
+    if (!shareContent) await fetchShareContent();
+    const content = shareContent || stats;
+    if (!content) return;
+    const text = content.message || `DONZO — o'yinlar va xizmatlarga tez va xavfsiz top-up!\n\nTaklif kod: ${user.referral_code}\nHavola: ${content.deep_link || content.link}`;
+    // Telegram share
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'DONZO Referral', text });
+        return;
+      } catch { /* cancelled */ }
+    }
+    // Fallback: copy to clipboard
+    await navigator.clipboard.writeText(text);
+    toast.success('Referal matni nusxalandi! Telegramda yuboring');
+  };
+
+  const handleCopyLink = async () => {
+    const link = shareContent?.deep_link || stats?.referral_link || `${window.location.origin}/?ref=${user.referral_code}`;
+    await navigator.clipboard.writeText(link);
+    toast.success('Havola nusxalandi!');
   };
 
   const handleClaim = async () => {
@@ -150,6 +190,24 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
             </div>
           </div>
 
+          {/* ═══ Share Buttons ═══ */}
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={handleShare}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#2DD4BF] to-[#6366F1] text-[#0B1220] font-bold text-sm hover:opacity-90 hover:scale-[1.01] transition-all duration-200"
+            >
+              <FiShare2 className="w-4 h-4" />
+              Ulashish
+            </button>
+            <button
+              onClick={handleCopyLink}
+              className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-white/5 border border-white/10 text-[#94A3B8] hover:text-[#2DD4BF] hover:border-[#2DD4BF]/30 text-sm transition-all"
+            >
+              <FiCopy className="w-4 h-4" />
+              Havolani nusxalash
+            </button>
+          </div>
+
           {/* ═══ Milestone gift: 30 friends → 1 month Telegram Premium ═══ */}
           {stats && (
             <div className="p-4 rounded-2xl bg-gradient-to-br from-[#A855F7]/10 to-[#00F5FF]/5 border border-[#A855F7]/20 mb-4">
@@ -210,6 +268,46 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
                   {isApplying ? '...' : 'Tasdiqlash'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ═══ Premium Activation Codes ═══ */}
+          {stats && stats.active_premium_codes > 0 && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-[#FFD700]/10 to-[#F97316]/5 border border-[#FFD700]/20 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-[#FFD700]">🏆 Aktiv Premium kodlaringiz</p>
+                <span className="px-2 py-0.5 rounded-md bg-[#FFD700]/20 text-[10px] text-[#FFD700] font-bold">
+                  {stats.active_premium_codes} ta faol
+                </span>
+              </div>
+              <p className="text-[11px] text-[#94A3B8] mb-2">
+                30 ta do'st taklif qilganingiz uchun Telegram Premium aktivlashtirish kodi berildi!
+              </p>
+              <button
+                onClick={() => { setShowShare(!showShare); if (!shareContent) fetchShareContent(); if (premiumCodes.length === 0) fetchPremiumCodes(); }}
+                className="w-full py-2.5 rounded-xl bg-[#FFD700]/10 border border-[#FFD700]/20 text-[#FFD700] text-sm font-semibold hover:bg-[#FFD700]/20 transition-all"
+              >
+                Kodlarni ko'rish va ulashish →
+              </button>
+              {showShare && premiumCodes.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {premiumCodes.map((pc: any) => (
+                    <div key={pc.code} className="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <div>
+                        <p className="text-sm font-mono font-bold text-white">{pc.code}</p>
+                        <p className="text-[10px] text-[#64748B]">Muddati: {new Date(pc.expires_at).toLocaleDateString('uz-UZ')}</p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        pc.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                        pc.status === 'used' ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-red-500/20 text-red-400'
+                      }`}>
+                        {pc.status === 'active' ? 'Faol' : pc.status === 'used' ? 'Ishlatilgan' : 'Muddati o\'tgan'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

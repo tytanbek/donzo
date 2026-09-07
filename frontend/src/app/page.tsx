@@ -5,6 +5,68 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FiZap, FiShield, FiClock, FiTrendingUp, FiAward } from 'react-icons/fi';
 import { serviceAPI, categoryAPI, referralAPI, bannerAPI } from '@/lib/api';
+import { FiShare2, FiCopy } from 'react-icons/fi';
+
+// ═══ Inline referral banner for home page ═══
+function ReferralBannerInline() {
+  const [banner, setBanner] = React.useState<any>(null);
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    // Show once per session
+    try {
+      if (sessionStorage.getItem('referral_banner_dismissed')) {
+        setDismissed(true);
+        return;
+      }
+    } catch {}
+    referralAPI.banner().then((r) => setBanner(r.data)).catch(() => {});
+  }, []);
+
+  const dismiss = () => {
+    setDismissed(true);
+    try { sessionStorage.setItem('referral_banner_dismissed', '1'); } catch {}
+  };
+
+  const handleShare = async () => {
+    if (!banner?.user_stats) return;
+    const code = banner.user_stats.referral_code;
+    const text = `DONZO — o'yinlar va xizmatlarga tez va xavfsiz top-up!\n\n30 ta do'st taklif qilsang — Telegram Premium bepul!\n\nTaklif kod: ${code}\nhttps://t.me/DONZOROBOT?start=ref_${code}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'DONZO Referral', text }); return; } catch {}
+    }
+    await navigator.clipboard.writeText(text);
+    toast.success('Referal matni nusxalandi!');
+  };
+
+  if (!banner || dismissed) return null;
+
+  return (
+    <div className="mx-4 my-3 p-4 rounded-2xl bg-gradient-to-r from-[#2DD4BF]/10 to-[#6366F1]/10 border border-[#2DD4BF]/20 relative overflow-hidden">
+      <button onClick={dismiss} className="absolute top-2 right-2 text-[#64748B] hover:text-white text-lg">&times;</button>
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2DD4BF] to-[#6366F1] flex items-center justify-center text-[#0B1220] shrink-0">
+          <FiShare2 className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-white">{banner.title}</p>
+          <p className="text-[11px] text-[#94A3B8] mt-0.5">{banner.subtitle}</p>
+          {banner.user_stats && (
+            <p className="text-[10px] text-[#2DD4BF] mt-1 font-semibold">
+              {banner.user_stats.total_referrals} ta taklif · Keyingi sovg'a: {banner.user_stats.milestone_progress}/{banner.user_stats.milestone_target}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={handleShare}
+          className="px-3 py-2 rounded-xl bg-[#2DD4BF]/10 border border-[#2DD4BF]/20 text-[#2DD4BF] text-xs font-semibold hover:bg-[#2DD4BF]/20 transition-all shrink-0"
+        >
+          Ulashish
+        </button>
+      </div>
+    </div>
+  );
+}
 import { useStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 import { BOT_URL } from '@/lib/brand';
@@ -216,6 +278,11 @@ export default function HomePage() {
           </div>
         );
       })()}
+
+      {/* ═══════════ REFERRAL BANNER ═══════════ */}
+      {isAuthenticated && user && user.role === 'customer' && (
+        <ReferralBannerInline />
+      )}
 
       {/* ═══════════ GUEST CTA ═══════════ */}
       {!isAuthenticated && !user && (

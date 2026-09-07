@@ -228,3 +228,38 @@ class ReferralReward(models.Model):
 
     def __str__(self):
         return f"@{self.referrer.username} milestone {self.milestone} -> {self.reward_label}"
+
+
+class PremiumActivationCode(models.Model):
+    """Premium activation code — generated when a user hits 30 referrals.
+
+    The user gets a one-time-use code they can share or activate directly.
+    Admin can also activate codes from the admin panel.
+    Codes expire after 30 days.
+    """
+    STATUS_CHOICES = [
+        ('active', 'Faol'),
+        ('used', 'Ishlatilgan'),
+        ('expired', "Muddati o'tgan"),
+    ]
+
+    code = models.CharField(max_length=20, unique=True, db_index=True)
+    referrer = models.ForeignKey(
+        'users.User', on_delete=models.CASCADE, related_name='premium_codes'
+    )
+    milestone = models.PositiveIntegerField(help_text='Referal milestone (30, 60, 90...)')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    activated_by = models.ForeignKey(
+        'users.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='activated_premium_codes'
+    )
+    activated_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'premium_activation_codes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.code} ({self.status}) — @{self.referrer.username}"
