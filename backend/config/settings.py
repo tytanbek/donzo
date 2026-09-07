@@ -256,7 +256,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', str(DEBUG)).lower() == 'true'
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3002,http://localhost:8000').split(',')
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3002,http://localhost:8000,https://frontend-self-mu-1nb1d09n0h.vercel.app').split(',')
 # Public-tunnel origins are allowed while DEBUG (hostnames change on every
 # restart; ngrok-free.app is the permanent backend domain). In production these
 # regexes are empty — use explicit origins.
