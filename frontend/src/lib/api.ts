@@ -25,9 +25,10 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // Public tunnels (trycloudflare) can take 20-60s to route the first request
-  // (cold routing) — use a generous timeout so the first attempt usually succeeds.
-  timeout: 90000,
+  // Render free tier cold start + network — 30s yetarli. 90s esa UI'ni
+  // "osilib qolgan"dek his qildirardi (spinner 30-60s). Cold start'ni
+  // cloud_launcher pingeri oldini oladi (5 daqiqada ping).
+  timeout: 30000,
 });
 
 // ── Read-only GET cache (in-memory) ──
@@ -93,13 +94,12 @@ function shouldRetry(error: any): boolean {
 
 // Only idempotent methods are safe to retry: GET/PUT/DELETE. POST and PATCH are
 // excluded to avoid double-submits (orders, payments, status updates) — EXCEPT
-// the login endpoints (fragment-login / demo-login), which are idempotent
-// (get_or_create + fresh tokens, nothing is charged) and MUST be retried
-// because the public tunnel routinely drops the very first request (cold
-// routing) and the Fragment API is flaky.
+// initdata-login, which is idempotent (lookup + fresh tokens, nothing is
+// charged) and MUST be retried because the very first request after Render
+// cold start routinely drops.
 function isRetryableMethod(method?: string, url?: string): boolean {
   const m = String(method || '').toLowerCase();
-  if (m === 'post' && url && (url.includes('/auth/fragment-login/') || url.includes('/auth/demo-login/'))) return true;
+  if (m === 'post' && url && url.includes('/auth/initdata-login/')) return true;
   return !['post', 'patch'].includes(m);
 }
 
@@ -205,45 +205,23 @@ api.interceptors.response.use(
   }
 );
 
-// Auth — FRAGMENT LOGIN: web app ochilganda foydalanuvchi Telegram
-// username'ini kiritadi → backend Fragment API (getInfo) orqali jonli
-// ma'lumotni oladi, user id ga biriktiradi va JWT qaytaradi. Keyingi
-// ochilishlarda token saqlanadi — profil avtomatik yuklanadi.
+// Auth — YAGONA kirish yo'li: TELEGRAM WEBAPP AVTO-KIRISH.
+// Username-based login (fragment-login / login-code / demo-login) butunlay
+// o'chirilgan — backend 403 qaytaradi. Har kim admin username'ini kiritib
+// kira olmasligi uchun faqat Telegram imzolagan initData tasdiqlanadi.
 export const authAPI = {
-  // telegramUsername: Telegram WebApp initDataUnsafe'dagi JORIY akkaunt
-  // username'i — backend kiritilgan username bilan mosligini tekshiradi
-  // (mos kelmasa 403: boshqa birovning username'i bilan kirish mumkin emas).
-  fragmentLogin: (username: string, telegramUsername?: string, telegramId?: string) =>
-    api.post('/auth/fragment-login/', {
-      username,
-      ...(telegramUsername ? { telegram_username: telegramUsername } : {}),
-      ...(telegramId ? { telegram_id: telegramId } : {}),
-    }),
-  // BOT ORQALI TASDIQLASH KODI: username kiritilgach kod @DONZOROBOT orqali
-  // Telegram chatiga yuboriladi, foydalanuvchi kodni kiritadi → JWT.
-  requestLoginCode: (username: string, telegramId?: string) =>
-    api.post('/auth/login-code/', {
-      username,
-      ...(telegramId ? { telegram_id: telegramId } : {}),
-    }),
-  verifyLoginCode: (username: string, code: string) =>
-    api.post('/auth/login-code/verify/', { username, code }),
-  // Dev/testing uchun: rol bo'yicha avtomatik demo-foydalanuvchi.
-  demoLogin: (role: string) => api.post('/auth/demo-login/', { role }),
   // ── TELEGRAM WEBAPP AVTO-KIRISH (REAL LOGIN) ──
   // Telegram ichida WebApp ochilganda `window.Telegram.WebApp.initData`
-  // ichida sign相続 (signed data) mavjud. Backend HMAC-SHA256 bilan
-  // tasdiqlaydi: bot token bilan yaratilgan signature mos keladigani —
-  // foydalanuvchi haqiqiy Telegram foydalanuvchisi.
-  // 
+  // ichida signed data mavjud. Backend HMAC-SHA256 bilan tasdiqlaydi:
+  // bot token bilan yaratilgan signature mos keladigani — foydalanuvchi
+  // haqiqiy Telegram foydalanuvchisi.
+  //
   // Boshqa manbadan kelgan initData yolg'iz signature bilan tasdiqlanmaydi.
-  // 
-  // Qaytaradi: {access, refresh, user} — ya'ni JWT va foydalanuvchi ma'lumotlari.
-  // Agarga foydalanuvchi mavjud bo'lmasa — yangi mijoz yaratiladi (get_or_create).
-  // Agar foydalanuvchi mavjud bo'lsa — uning profili yangilanishi bilan kirish o'tadi.
-  // 
-  // Super admin: super_admin_telegram_id o'rnatilgan bo'lsa, shu ID'ga ega bo'lgan
-  // foydalanuvchi super_admin ga aylantiriladi (avtomatik).
+  //
+  // Qaytaradi: {access, refresh, user} — JWT va foydalanuvchi ma'lumotlari.
+  // Foydalanuvchi mavjud bo'lmasa — yangi mijoz yaratiladi (get_or_create).
+  // Super admin: super_admin_telegram_id o'rnatilgan bo'lsa, shu ID'ga ega
+  // bo'lgan foydalanuvchi super_admin ga aylantiriladi (avtomatik).
   initdataLogin: (initData: string) =>
     api.post('/auth/initdata-login/', { init_data: initData }),
   profile: () => api.get('/auth/profile/'),

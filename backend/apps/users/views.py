@@ -360,7 +360,18 @@ def fragment_login(request):
 
     Admin: `fragment_admin_usernames` Setting (vergul bilan) dagi username
     bilan kirganlar avtomatik super_admin bo'ladi.
+
+    ⛔ O'CHIRILGAN (v2): username-based login butunlay taqiqlangan.
+    Har kim admin username'ini kiritib kirishi mumkin edi (account takeover).
+    Yagona kirish yo'li — Telegram WebApp initData avto-kirishi (initdata-login).
+    Fragment API ham sekin edi (12s timeout x2) — login 30-60s ga cho'zilardi.
     """
+    # SECURITY: faqat Telegram initData orqali kirish ruxsat etiladi.
+    return Response(
+        {'detail': 'Kirish faqat Telegram orqali avtomatik amalga oshiriladi. @DONZOROBOT orqali WebApp oching.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+    # (quyidagi kod endi hech qachon bajarilmaydi — tarixiy izoh sifatida)
     username = _normalize_username(request.data.get('username'))
     if not username:
         return Response(
@@ -1007,7 +1018,15 @@ def request_login_code(request):
 
     Xavfsizlik: kod bir martalik, 5 daqiqa, SHA-256 hash saqlanadi; javobda
     hech qachon kod qaytmaydi (Telegram ichida). Throttle 10/min/IP.
+
+    ⛔ O'CHIRILGAN (v2): username-based login butunlay taqiqlangan.
+    Yagona kirish yo'li — Telegram WebApp initData avto-kirishi (initdata-login).
     """
+    # SECURITY: faqat Telegram initData orqali kirish ruxsat etiladi.
+    return Response(
+        {'detail': 'Kirish faqat Telegram orqali avtomatik amalga oshiriladi. @DONZOROBOT orqali WebApp oching.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
     from .code_utils import create_login_code, send_code_to_chat
 
     username = _normalize_username(request.data.get('username'))
@@ -1088,7 +1107,15 @@ def verify_login_code(request):
 
     Body: {username, code}
     Kod username'ga bog'langan, bir martalik, 5 daqiqa yaroqli.
+
+    ⛔ O'CHIRILGAN (v2): username-based login butunlay taqiqlangan.
+    Yagona kirish yo'li — Telegram WebApp initData avto-kirishi (initdata-login).
     """
+    # SECURITY: faqat Telegram initData orqali kirish ruxsat etiladi.
+    return Response(
+        {'detail': 'Kirish faqat Telegram orqali avtomatik amalga oshiriladi. @DONZOROBOT orqali WebApp oching.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
     from .code_utils import hash_code
     from .models import TelegramLoginCode
 

@@ -53,94 +53,38 @@ export default function RootLayout({
   const router = useRouter();
   const { user, isAuthenticated, authChecked, setUser, setAuthChecked } = useStore();
 
-  // ── Telegram WebApp initData ile avto-kirish (REAL LOGIN) ──
-  // Agar foydalanuvchi Telegram ichida WebApp ochsa, `window.Telegram.WebApp.initData`
-  // ichida sign相続 (signed data) mavjud. Backend HMAC-SHA256 bilan tasdiqlaydi:
-  // bot token bilan yaratilgan signature mos keladigani — foydalanuvchi haqiqiy
-  // Telegram foydalanuvchisi. Boshqa manbadan kelgan initData yolg'iz signature
-  // bilan tasdiqlanmaydi (HMAC orqali).
-  const _tryInitDataLogin = async () => {
-    try {
-      // Telegram WebApp SDK yuklandi?
-      const tg = (window as any).Telegram?.WebApp;
-      if (!tg?.initData) {
-        // Telegram ichida emas yoki initData kelmagan — FragmentLogin chiqariladi.
-        setAuthChecked(true);
-        return;
-      }
-
-      // initData'ni olamiz (signed data) va backendga yuboramiz.
-      const initData = tg.initData;
-      if (!initData) {
-        setAuthChecked(true);
-        return;
-      }
-
-      const res = await authAPI.initdataLogin(initData);
-      if (!res.data) {
-        setAuthChecked(true);
-        return;
-      }
-
-      // JWT tokenlarini saqlaymiz va foydalanuvchini set qilamiz.
-      localStorage.setItem('access_token', res.data.access);
-      localStorage.setItem('refresh_token', res.data.refresh);
-      setUser(res.data.user);
-      setAuthChecked(true);
-    } catch {
-      // initData avto-kirish ishlamasa (backend xato, signature noto'g'ri, 
-      // yoki bot token yo'q) — hech qachon cheksiz loading'da qolmasligi
-      // uchun authChecked'ni DOIM set qilamiz (FragmentLogin ko'rsatiladi).
-      setAuthChecked(true);
-    }
-  };
-
   const isClassicShell = CLASSIC_SHELL_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(prefix + '/')
   );
 
-  // ── AUTH AVTO-KIRISH (Telegram ichida) ────────────────────────────────────
+  // ── AUTH AVTO-KIRISH ──────────────────────────────────────────────────────
   // 1. Token bor → profil avtomatik yuklanadi (user id orqali aniqlanadi).
-  // 2. Token yo'q → avval DEMO mode login qilinib ko'radi; muvaffaqiyatsiz bo'lsa
-  //    Telegram ichida bo'lsa initData avto-kirish; hamma qatoridan qolsa →
-  //    FragmentLogin ekrani ko'rsatiladi (keyword/userlookup).
+  // 2. Token yo'q → authChecked DARHOL true bo'ladi — FragmentLogin ekrani
+  //    avto-kirishni o'zi bajaradi (Telegram initData tekshiruvi, retry,
+  //    xatolik UI). Hech qachon cheksiz loading spinner bo'lmaydi.
   useEffect(() => {
     let cancelled = false;
     const token = localStorage.getItem('access_token');
     if (!token) {
-      // 1-qadam: DEMO mode — lokal/debug'da avtomatik customer sifatida kirish.
-      authAPI.demoLogin('customer')
-        .then((res) => {
-          if (cancelled) return;
-          localStorage.setItem('access_token', res.data.access);
-          localStorage.setItem('refresh_token', res.data.refresh);
-          setUser(res.data.user);
+      if (!cancelled) setAuthChecked(true);
+      return;
+    }
+    // Token bor — profilni sinxronlashtirish.
+    authAPI.profile()
+      .then((res) => {
+        if (cancelled) return;
+        setUser(res.data);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        // Token eskirgan/noto'g'ri — tozalab, login ekraniga qaytamiz.
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        if (!cancelled) {
+          setUser(null);
           setAuthChecked(true);
-        })
-        .catch(() => {
-          // Demo-login ishlamasa (prod/DEBUG=False) — keyingi qadam: initData.
-          if (!cancelled) {
-            _tryInitDataLogin();
-          }
-        });
-      } else {
-        // Token bor — profilni sinxronlashtirish.
-        authAPI.profile()
-          .then((res) => {
-            if (cancelled) return;
-            setUser(res.data);
-            setAuthChecked(true);
-          })
-          .catch(() => {
-            // Token eskirgan/noto'g'ri — tozalab, login ekraniga qaytamiz.
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            if (!cancelled) {
-              setUser(null);
-              setAuthChecked(true);
-            }
-          });
-      }
+        }
+      });
     return () => {
       cancelled = true;
     };
