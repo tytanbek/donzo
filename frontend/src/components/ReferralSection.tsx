@@ -80,7 +80,7 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
   };
 
   const handleCopyLink = async () => {
-    const link = shareContent?.deep_link || stats?.referral_link || `${window.location.origin}/?ref=${user.referral_code}`;
+    const link = `https://t.me/DONZOROBOT?start=ref_${user.referral_code}`;
     await navigator.clipboard.writeText(link);
     toast.success('Havola nusxalandi!');
   };
@@ -122,7 +122,7 @@ export default function ReferralSection({ user, copyReferral }: ReferralSectionP
 
   // Login removed — referral links point at the home page (auto-login via
   // Telegram picks the user up; ?ref= is preserved for the backend flow).
-  const referralLink = stats?.referral_link || `${window.location.origin}/?ref=${user.referral_code}`;
+  const referralLink = `https://t.me/DONZOROBOT?start=ref_${user.referral_code}`;
 
   if (user.role !== 'customer') return null;
 

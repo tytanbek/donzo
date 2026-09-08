@@ -715,6 +715,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Linked user? Show balance + staff extras in /start ──
     tg_id = str(update.effective_user.id)
     user = await db_user_by_tg(tg_id)
+
+    # ── Referal tizimi: /start ref_KOD ──
+    ref_code = None
+    if context.args and context.args[0].startswith('ref_'):
+        ref_code = context.args[0][4:]  # 'ref_ABC123' -> 'ABC123'
+        if user is not None and not user.referred_by and user.referral_code != ref_code:
+            try:
+                referrer = await sync_to_async(User.objects.get)(referral_code=ref_code, is_active=True)
+                STAFF_ROLES_BOT = ('super_admin', 'admin', 'senior_operator', 'operator', 'support')
+                if referrer.role not in STAFF_ROLES_BOT and user.role not in STAFF_ROLES_BOT:
+                    user.referred_by = referrer
+                    user.save(update_fields=['referred_by'])
+                    print(f'[BOT] Referal: @{user.username} <- @{referrer.username} ({ref_code})')
+            except User.DoesNotExist:
+                print(f'[BOT] Referal: invalid code {ref_code}')
+            except Exception as e:
+                print(f'[BOT] Referal xatosi: {e}')
     if user is not None:
         balance_val, cashback = await db_balance_info(user)
         message += (
@@ -730,7 +747,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([
             InlineKeyboardButton(
                 "🚀 Web App'ni ochish",
-                web_app=WebAppInfo(url=str(web_app_url)),
+                web_app=WebAppInfo(url=str(web_app_url) + (f"?ref={ref_code}" if ref_code else "")),
             )
         ])
     elif web_app_url and not str(web_app_url).startswith('https://'):
