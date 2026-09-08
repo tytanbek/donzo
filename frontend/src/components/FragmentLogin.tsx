@@ -59,6 +59,8 @@ export default function FragmentLogin() {
       } catch { /* ahamiyatsiz */ }
       setUser(user);
       setAuthChecked(true);
+      // Clear force-logout flag — user successfully re-entered
+      try { localStorage.removeItem('donzo_force_logout'); } catch { /* noop */ }
       goToPanel(user.role);
     } catch (e: any) {
       let detail = e?.response?.data?.detail || '';
@@ -96,6 +98,14 @@ export default function FragmentLogin() {
   useEffect(() => {
     if (attemptedRef.current) return;
     attemptedRef.current = true;
+
+    // If user explicitly logged out, don't auto-login — show bot link instead
+    try {
+      if (localStorage.getItem('donzo_force_logout') === '1') {
+        setState('outside');
+        return;
+      }
+    } catch { /* noop */ }
 
     let tries = 0;
     let timer: number | undefined;

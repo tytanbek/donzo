@@ -136,6 +136,10 @@ export const useStore = create<AppState>((set) => ({
     } catch { /* ignore */ }
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    // Force-logout flag: prevents Telegram auto-login from re-logging the user in.
+    // The flag is cleared when the user re-enters via the bot (Telegram SDK provides
+    // a fresh initData, which signals a deliberate re-entry).
+    try { localStorage.setItem('donzo_force_logout', '1'); } catch { /* noop */ }
     set({ user: null, isAuthenticated: false });
   },
 
