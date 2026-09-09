@@ -209,7 +209,7 @@ def _promote_login_session(slot=1):
 # hold an admin API request for minutes. Render'da Telethon birinchi
 # ulanishida DC discovery + TLS handshake sekin bo'lishi mumkin — 60s
 # qo'ydik (30s da "kod tekshirilmadi" sabab bo'lishi mumkin edi).
-OP_TIMEOUT = 60
+OP_TIMEOUT = 120  # Render free tier cold start uchun yetarli
 
 
 def _kill_worker_crossplatform(slot=1) -> None:
@@ -549,13 +549,15 @@ def start_phone(phone: str, slot=1) -> dict:
     try:
         result = _run(_start())
     except Exception as exc:
-        logger.warning('send_code_request failed: %s', type(exc).__name__)
+        logger.warning('send_code_request failed: %s: %s', type(exc).__name__, str(exc)[:200])
         err = type(exc).__name__.lower()
+        if 'timeout' in err:
+            return {'ok': False, 'detail': 'Telegram ulanish vaqti tugadi. Birozdan so’ng qayta urinib ko’ring (Render cold start 1-2 daqiqa olishi mumkin).'}
         if 'phone' in err and ('invalid' in err or 'occupied' in err):
             return {'ok': False, 'detail': "Raqam noto'g'ri yoki bu akkaunt allaqachon band (PhoneNumberInvalid/Occupied)"}
         if 'flood' in err:
             return {'ok': False, 'detail': 'Telegram vaqtincha chekladi (flood). Birozdan so‘ng qayta urinib ko‘ring.'}
-        return {'ok': False, 'detail': f"Kod yuborilmadi ({type(exc).__name__})"}
+        return {'ok': False, 'detail': f"Kod yuborilmadi ({type(exc).__name__}). Qayta urinib ko’ring."}
 
     if not result.get('ok'):
         return result

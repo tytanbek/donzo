@@ -211,7 +211,7 @@ export default function AdminUserClientPage() {
             <FiUser className="w-4 h-4 text-[#00F5FF]" /> Telegram akkaunt
           </h2>
 
-          {authorized ? (
+          {authorized && st.username ? (
             <div>
               <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-4 mb-4">
                 <p className="text-green-400 font-semibold text-sm">✅ Kiritilgan</p>
