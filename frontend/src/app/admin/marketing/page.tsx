@@ -82,6 +82,7 @@ export default function AdminMarketingPage() {
       } catch (e) { console.error('Marketing stats error:', e); }
       finally { setStatsLoading(false); }
     };
+    fetch();
     fetchStats();
   }, []);
 
