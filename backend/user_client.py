@@ -194,6 +194,15 @@ def _log(msg: str):
 def _stats_started(account: dict):
     if _is_legacy_slot():
         user_client_stats.mark_started(account)
+        # Persist account metadata to Neon DB so the admin panel can show
+        # username/ID/phone even after Render cold-starts (ephemeral stats
+        # file is lost).
+        try:
+            import json as _json
+            from apps.settings_app.models import Setting
+            Setting.set_setting('user_client_account_json', _json.dumps(account, ensure_ascii=False))
+        except Exception:
+            pass
         return
     try:
         from django.utils import timezone

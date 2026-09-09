@@ -418,6 +418,16 @@ def get_status(slot=1) -> dict:
     db_phone, _db_hash, _db_2fa = _get_login_state()
     if online:
         account = stats.get('account') or {}
+        # Fallback: if stats file lost account info (cold start), read from Neon DB
+        if not account.get('username'):
+            try:
+                from apps.settings_app.models import Setting
+                import json as _json
+                _acct_json = Setting.get_setting('user_client_account_json', '') or ''
+                if _acct_json:
+                    account = _json.loads(_acct_json)
+            except Exception:
+                pass
         return {
             'authorized': bool(stats.get('authorized')),
             'credentials': True,
@@ -445,6 +455,7 @@ def get_status(slot=1) -> dict:
     # noto'g'ri bo'lardi: authorized=True + worker_online=False ko'rsatamiz.
     db_authorized = False
     db_username = stats.get('account', {}).get('username') or ''
+    db_account = stats.get('account') or {}
     try:
         from apps.settings_app.models import Setting
         _b64 = Setting.get_setting('user_client_session_b64', '') or ''
@@ -471,6 +482,16 @@ def get_status(slot=1) -> dict:
                     _os.remove(_path)
                 except Exception:
                     pass
+        # Also read account metadata persisted by the worker (_stats_started)
+        # so username/ID/phone survive Render cold-starts.
+        _acct_json = Setting.get_setting('user_client_account_json', '') or ''
+        if _acct_json and not db_username:
+            try:
+                import json as _json
+                db_account = _json.loads(_acct_json)
+                db_username = db_account.get('username') or ''
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -485,8 +506,8 @@ def get_status(slot=1) -> dict:
         'last_error_ts': stats.get('last_error_ts'),
         'phone': db_phone or _PHONE,
         'username': db_username,
-        'first_name': stats.get('account', {}).get('first_name') or '',
-        'user_id': stats.get('account', {}).get('user_id'),
+        'first_name': db_account.get('first_name') or '',
+        'user_id': db_account.get('user_id'),
         'login_pending': bool(db_phone),
         'session_source': 'neon' if db_authorized else 'none',
     }
@@ -733,7 +754,17 @@ def logout(slot=1) -> dict:
     except Exception as exc:
         logger.warning('session delete failed: %s', exc)
     _clear_login_state(slot)
-    if not _is_legacy_slot(slot):
+    # CRITICAL: also wipe the persisted session from Neon DB so the worker
+    # cannot restore it on restart (this was the root cause of 'Kiritilgan'
+    # persisting after logout on Render free tier).
+    if _is_legacy_slot(slot):
+        try:
+            from apps.settings_app.models import Setting
+            Setting.set_setting('user_client_session_b64', '')
+            Setting.set_setting('user_client_account_json', '')
+        except Exception:
+            pass
+    else:
         try:
             from apps.cardpay.models import UserClientAccount
             UserClientAccount.objects.filter(slot=int(slot)).update(
