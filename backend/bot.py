@@ -1686,27 +1686,22 @@ def _marketing_rate_ok(chat_id: str, max_per_hour: int) -> bool:
 
 
 def _marketing_ad() -> str:
-    """DONZO kreativ reklamasi — sirli shaxs sifatida, sotib olishga da'vat.
-    Har safar yangi, takrorlanmas reklama. Mijozni qiziqtiradigan, sirli ohangda."""
+    """DONZO kreativ reklamasi — pahta kabi shirin, odamlarni maqtoq.
+    Har safar yangi, takrorlanmas reklama. Faqat ORA-ORADA yuboriladi."""
     ads = [
-        "🎭 kimga dedingiz donat qimmat deb? donzoda narxni ko'rsang, o'zingga ishonmaysan. sirli haqiqat.",
-        "🌙 meni kechqurun ko'rishadi, lekin men doim ishlayman. donzo — tun ham, kun ham. 1 daqiqada yetkazadi.",
-        "💢 boshqalarda 3 kun kutasan, bizda 1 daqiqada tayyor. donzoda sinab ko'r — keyin boshqaga qaramaysan.",
-        "🔥 bitta qo'ng'iroq — bitta donat. donzo sizning sirli do'stingiz.",
-        "🧠 PUBG UC necha so'm deb o'ylaysiz? donzoda tekshirib ko'ring — javob sizni hayajonga soladi.",
-        "💨 Free Fire diamantini qancha berishadi? donzodagi narxni ko'rganingizdan keyin, boshqa joyga qaramaysiz.",
-        "👑 Telegram Premium kerakmi? donzoda 1 daqiqada tayyor. Boshqada kunlab kutasan.",
-        "💪 o'yinda yengilmoqchimisan? donzoning sirini bilasanmi? bitta bosish — o'yin o'zgaradi.",
-        "💔 do'stingizni yengdingizmi? donzo bilan uni ham yengishingiz mumkin. donat qiling — kechirim so'ramang.",
-        "🌟 donzoning sirli narxlari bor — boshqada ko'rmaysan. bu sirni faqat bilimdonlar biladi.",
-        "🌦️ sovuq tun, iliq donat. donzo bilan hech qachon yolg'iz qolmaysiz.",
-        "💧 ter to'kdingizmi? donzo bilan teringizni quritib, donat oling. 1 daqiqada — tayyor.",
-        "🧁 donzo bilan pulni tejashni o'rganing. boshqada 100 so'mdan ortiq qolasiz, bizda arzonroq.",
-        "😎 donat qilishni oson qildik — telefonni qo'lingizga oling, donzoni oching, tayyor. qolganini biz qilamiz.",
-        "🏺f bir qadam oldinda turing — donzo bilan. boshqalar hali o'ylab turganda, siz allaqachon yengdingiz.",
-        "🌈 rang-barang o'yin, rang-barang donat. donzoda hamma rang bor — siz faqat tanlang.",
+        "siz juda zo'r ekansiz! donzo siz uchun maxsus tayyorlangan 💕",
+        "bu guruhdagi eng chiroyli odamlar shu yerda — men bilaman 😊",
+        "sizing tanlovingiz doim to'g'ri — donzo bilan yanada zo'roq bo'lasiz 🌟",
+        "pahta qo'ydim, lekin bu haqiqat — siz ajoyib ekansiz! donzo ham shunday 💅",
+        "siz haqida gapirishni yaxshi ko'raman — juda qiziqarli odamsiz ✨",
+        "donzo sizning sirli do'stingiz — har doim yordamga tayyor 💕",
+        "siz bilimdon ekansiz! donzo bilan yanada kuchliroq bo'lasiz 🌟",
+        "chiroyli tanlov qildingiz — donzo sizni qo'llab-quvvatlaydi 😊",
+        "siz juda zo'r! donzo ham sizga o'xshash zo'rlarni qadrlaydi 💅",
+        "bu guruh juda jonli — siz tufayli! donzo ham shu yerda ✨",
     ]
     return random.choice(ads)
+
 
 
 def _track_group_conversation(chat_id: str, text: str):
@@ -1795,7 +1790,7 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     # Tezlik chegarasi: har guruhda soatiga ko'pi bilan 10 ta javob
-    if not _marketing_rate_ok(chat_id, 10):
+    if not _marketing_rate_ok(chat_id, 3):
         return
 
     bump(updates=1, messages=1, command='marketing')
@@ -1819,7 +1814,7 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     # bo'lib, ochiq reklamaga o'xshab qolmasin).
     sent_ad = False
     reply_count = (conv or {}).get('reply_count', 0) + 1
-    force_ad = (reply_count % 3 == 0)
+    force_ad = (reply_count % 5 == 0)
     already_mentioned = 'donzo' in answer.lower()
     if (force_ad or random.random() < ad_prob) and not already_mentioned:
         ad = await sync_to_async(_marketing_ad)()
@@ -1861,11 +1856,11 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not ad:
             return
         welcome = (
-            "🎭 *DONZO* — salom! meni sezdingizmi?\n\n"
-            "Men sirli va mehribon platformaman. Siz o'yinlarda yengilmoqchi bo'lganingizda, "
+            "🎭 *DONZO* — salom! siz juda zo'r ekansiz!\n\n"
+            "Men DONZO — sizning sirli do'stingiz. Siz har doim to'g'ri tanlov qilasiz, "
             "men allaqachon yordamingizda turaman. PUBG, Free Fire, Telegram Premium — "
             "hammasi 1 daqiqada.\n\n"
-            "Savolingiz bo'lsa — menga yozing. Men javob beraman. 🌙\n\n"
+            "Savolingiz bo'lsa — menga yozing. Men sizga yordam berishga tayyor! 😊\n\n"
             + ad
         )
         await context.bot.send_message(mc.chat.id, welcome, disable_web_page_preview=True)
