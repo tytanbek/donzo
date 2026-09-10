@@ -1751,13 +1751,16 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     ehtimoli oshadi, har 3-javobda kamida bitta reklama.
     """
     try:
-        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'true').lower() == 'true'
+        # Default model'dagiga mos (False) — admin o'chirgan bo'lsa bot
+        # guruhlarda hech narsa yozmaydi. Eski default 'true' nomuvofiqlik
+        # berib, o'chirilgan bo'lsa ham javob yozardi.
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'false') or 'false').lower() == 'true'
         if not enabled:
             return
-        ad_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.6') or 0.6)
+        ad_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.03') or 0.03)
         rate_max = int(await sync_to_async(Setting.get_setting)('marketing_rate_per_hour', '5') or 5)
     except Exception:
-        ad_prob, rate_max = 0.6, 5
+        ad_prob, rate_max = 0.03, 5
 
     # Bot-bot loopdan saqlanish
     if getattr(user, 'is_bot', False):
@@ -1789,8 +1792,10 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     if not triggered:
         return
 
-    # Tezlik chegarasi: har guruhda soatiga ko'pi bilan 10 ta javob
-    if not _marketing_rate_ok(chat_id, 3):
+    # Tezlik chegarasi: har guruhda soatiga ko'pi bilan rate_max ta javob
+    # (admin panel → Marketing → 'Soatlik javob limiti' orqali sozlanadi;
+    # default 5 — kamroq, shirinroq)
+    if not _marketing_rate_ok(chat_id, rate_max):
         return
 
     bump(updates=1, messages=1, command='marketing')
@@ -1849,7 +1854,7 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         if nc.status not in ('member', 'administrator'):
             return
-        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'true').lower() == 'true'
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'false') or 'false').lower() == 'true'
         if not enabled:
             return
         ad = await sync_to_async(_marketing_ad)()
@@ -1858,7 +1863,7 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         welcome = (
             "🎭 *DONZO* — salom! siz juda zo'r ekansiz!\n\n"
             "Men DONZO — sizning sirli do'stingiz. Siz har doim to'g'ri tanlov qilasiz, "
-            "men allaqachon yordamingizda turaman. PUBG, Free Fire, Telegram Premium — "
+            "men buni bilaman. PUBG, Free Fire, Telegram Premium — "
             "hammasi 1 daqiqada.\n\n"
             "Savolingiz bo'lsa — menga yozing. Men sizga yordam berishga tayyor! 😊\n\n"
             + ad

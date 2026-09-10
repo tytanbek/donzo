@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 
 from .models import User, ReferralReward, PremiumActivationCode
+from apps.settings_app.models import Setting
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +102,13 @@ def my_referrals(request):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def referral_stats(request):
-    """GET /api/v1/referrals/stats/"""
+    """GET /api/v1/referrals/stats/
+
+    TEZLIK: grant_referral_milestone_rewards faqat referal bog'langanda
+    yoki buyurtma to'langanda chaqiriladi — har GET so'rovda emas.
+    Bu endpoint faqat statistikani qaytaradi (read-only).
+    """
     user = request.user
-    from .referral_service import grant_referral_milestone_rewards
-    grant_referral_milestone_rewards(user)
 
     total_referrals = User.objects.filter(referred_by=user).count()
     total_cashback_earned = _sum_cashback_txs(_cashback_txs(user))
@@ -115,15 +119,22 @@ def referral_stats(request):
         customer_id__in=referred_ids, payment_status="paid"
     ).aggregate(total=Sum("total_price"))["total"] or Decimal("0")
 
-    site_url = request.build_absolute_uri("/").rstrip("/")
     rewards_granted = ReferralReward.objects.filter(referrer=user, status="granted").count()
     next_milestone = ReferralReward.MILESTONE_EVERY * (rewards_granted + 1)
     milestone_progress = max(0, total_referrals - ReferralReward.MILESTONE_EVERY * rewards_granted)
     active_codes = PremiumActivationCode.objects.filter(referrer=user, status="active").count()
 
+    # Telegram bot deep link — Telegram'dan ochilganda avtomatik referal qo'llaniladi
+    bot_username = Setting.get_setting('telegram_bot_username', 'DONZOROBOT') or 'DONZOROBOT'
+    deep_link = f"https://t.me/{bot_username.lstrip('@')}?start=ref_{user.referral_code}"
+    # Web app link (fallback)
+    site_url = request.build_absolute_uri("/").rstrip("/")
+    web_link = f"{site_url}/?ref={user.referral_code}"
+
     return Response({
         "referral_code": user.referral_code,
-        "referral_link": f"{site_url}/?ref={user.referral_code}",
+        "referral_link": web_link,
+        "deep_link": deep_link,
         "total_referrals": total_referrals,
         "total_cashback_earned": float(total_cashback_earned),
         "available_cashback": float(user.cashback_balance or 0),

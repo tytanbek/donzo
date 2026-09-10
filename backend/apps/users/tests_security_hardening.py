@@ -1,90 +1,56 @@
 """
 Xavfsizlik mustahkamlash testlari (security hardening).
 
-  1. dev-kod (telegram_id siz) production'da 403 qaytaradi — account
-     takeover yo'li yopilgan.
-  2. fragment-login ScopedRateThrottle bilan himoyalangan.
-  3. demo-login DEBUG=False da 404.
-  4. IDOR: buyurtma faqat egasiga.
+  1. username-based login (fragment-login / login-code) butunlay o'chirilgan
+     — har qanday so'rov 403 (account takeover himoyasi).
+  2. demo-login DEBUG=False da 404.
+  3. IDOR: buyurtma faqat egasiga.
 """
-from unittest import mock
-
-from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.orders.models import Order, OrderStatus
 from apps.services.models import Category, Service, Package
-from apps.users.models import TelegramLoginCode
+from apps.users.models import User
 from apps.settings_app.models import Setting
 
-User = get_user_model()
 
-
-class DevCodeBlockedInProductionTests(TestCase):
-    """SECURITY: dev-rejim kodi (javobda qaytadigan) production'da 403."""
+class UsernameLoginBlockedInProductionTests(TestCase):
+    """SECURITY: username-based login yo'llari butunlay o'chirilgan (403)."""
 
     def setUp(self):
+        Setting.clear_cache()
+        Setting.set_setting('telegram_bot_token', '123456:TEST-TOKEN')
         self.client = APIClient()
         self.user = User.objects.create_user(
             username='sec_cust', email='sec_cust@tg.user', telegram_username='sec_cust',
             telegram_id='90001',
         )
 
-    @override_settings(DEBUG=False)
-    def test_code_not_returned_in_response_production(self):
-        """telegram_id siz so'rov production'da 403 — kod javobda YO'Q."""
-        with mock.patch('apps.users.views._verify_username_real',
-                        return_value=({'username': '@sec_cust'}, None)):
-            r = self.client.post('/api/v1/auth/login-code/', {'username': 'sec_cust'})
+    def test_fragment_login_blocked_403(self):
+        """fragment-login o'chirilgan — haker username bilan kira olmaydi."""
+        r = self.client.post('/api/v1/auth/fragment-login/', {'username': 'sec_cust'})
         self.assertEqual(r.status_code, 403)
-        self.assertNotIn('code', r.data)
-        # Hech qanday kod yaratilmadi
+        self.assertIn('Telegram', r.data['detail'])
+
+    def test_login_code_blocked_403(self):
+        """login-code o'chirilgan — Telegram ichida ham, tashqarida ham 403."""
+        r = self.client.post('/api/v1/auth/login-code/',
+                             {'username': 'sec_cust', 'telegram_id': '90001'})
+        self.assertEqual(r.status_code, 403)
+
+    def test_login_code_verify_blocked_403(self):
+        r = self.client.post('/api/v1/auth/login-code/verify/',
+                             {'username': 'sec_cust', 'code': '123456'})
+        self.assertEqual(r.status_code, 403)
+
+    def test_blocked_endpoints_never_create_users_or_codes(self):
+        """O'chirilgan endpointlar hech qanday user/kod yaratmaydi."""
+        self.client.post('/api/v1/auth/fragment-login/', {'username': 'ghost_user'})
+        self.client.post('/api/v1/auth/login-code/', {'username': 'ghost_user', 'telegram_id': '1'})
+        self.assertFalse(User.objects.filter(username='ghost_user').exists())
+        from apps.users.models import TelegramLoginCode
         self.assertFalse(TelegramLoginCode.objects.exists())
-
-    @override_settings(DEBUG=True)
-    def test_code_returned_only_in_debug(self):
-        with mock.patch('apps.users.views._verify_username_real',
-                        return_value=({'username': '@sec_cust'}, None)):
-            r = self.client.post('/api/v1/auth/login-code/', {'username': 'sec_cust'})
-        self.assertEqual(r.status_code, 200)
-        self.assertIn('code', r.data)  # faqat DEBUG'da
-
-    @override_settings(DEBUG=False)
-    def test_telegram_id_path_still_works_production(self):
-        """Telegram ichidagi oqim (telegram_id bilan) production'da ishlaydi."""
-        from apps.settings_app.models import Setting
-        Setting.set_setting('telegram_bot_token', '123456:TEST-TOKEN')
-        Setting.clear_cache()
-        with mock.patch('apps.users.views._bot_chat_username', return_value='sec_cust'), \
-             mock.patch('apps.users.code_utils.send_code_to_chat', return_value=True):
-            r = self.client.post(
-                '/api/v1/auth/login-code/',
-                {'username': 'sec_cust', 'telegram_id': '90001'},
-            )
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data['status'], 'sent')
-        self.assertNotIn('code', r.data)
-
-
-class FragmentLoginThrottleTests(TestCase):
-    """SECURITY: fragment-login brute-force himoyasi (20/min)."""
-
-    def setUp(self):
-        self.client = APIClient()
-
-    @override_settings(DEBUG=False)
-    def test_throttle_applied(self):
-        with mock.patch('apps.users.views._get_info_with_retry',
-                        return_value=({'username': '@x', 'name': '', 'photo': '',
-                                       'is_premium': False}, None)):
-            # ScopedRateThrottle: 20/min — 21-chi so'rov 429 bo'lishi kerak.
-            codes = []
-            for _ in range(21):
-                r = self.client.post('/api/v1/auth/fragment-login/', {'username': 'x'})
-                codes.append(r.status_code)
-        self.assertIn(429, codes, f'429 kutilgan edi, olindi: {codes}')
 
 
 class DemoLoginBlockedTests(TestCase):
@@ -98,58 +64,6 @@ class DemoLoginBlockedTests(TestCase):
     @override_settings(DEBUG=True)
     def test_demo_login_works_in_debug(self):
         r = APIClient().post('/api/v1/auth/demo-login/', {'role': 'customer'})
-        self.assertEqual(r.status_code, 200)
-
-
-class FragmentLoginTakeoverProtectionTests(TestCase):
-    """SECURITY: fragment-login account-takeover himoyasi.
-
-    Mavjud user uchun getInfo xato bo'lsa fallback FAQAT bot.getChat
-    orqali telegram_id<->username mosligi tasdiqlanganda o'tadi. Aks holda
-    haker istalgan mavjud username bilan o'sha user sifatida kira olardi.
-    """
-
-    def setUp(self):
-        self.client = APIClient()
-        self.victim = User.objects.create_user(
-            username='takeover_victim', email='tv@tg.user',
-            telegram_username='takeover_victim', telegram_id='70001',
-        )
-
-    def test_hacker_without_telegram_id_cannot_login_as_existing_user(self):
-        """getInfo xato + telegram_id yo'q -> login rad etiladi."""
-        with mock.patch('apps.services.fragment_api.get_info',
-                        return_value={'error': 'not_found'}):
-            r = self.client.post('/api/v1/auth/fragment-login/', {'username': 'takeover_victim'})
-        self.assertEqual(r.status_code, 401)
-        self.assertEqual(r.data.get('next_step'), 'code')
-
-    def test_hacker_with_wrong_telegram_id_cannot_login(self):
-        """getInfo xato + noto'g'ri telegram_id -> rad etiladi."""
-        with mock.patch('apps.services.fragment_api.get_info',
-                        return_value={'error': 'not_found'}), \
-             mock.patch('apps.users.views._bot_chat_username', return_value='someone_else'):
-            r = self.client.post('/api/v1/auth/fragment-login/',
-                                 {'username': 'takeover_victim', 'telegram_id': '99999'})
-        self.assertEqual(r.status_code, 401)
-
-    def test_owner_with_matching_telegram_id_logs_in(self):
-        """To'g'ri telegram_id + getChat mosligi -> login o'tadi."""
-        with mock.patch('apps.services.fragment_api.get_info',
-                        return_value={'error': 'not_found'}), \
-             mock.patch('apps.users.views._bot_chat_username', return_value='takeover_victim'):
-            r = self.client.post('/api/v1/auth/fragment-login/',
-                                 {'username': 'takeover_victim', 'telegram_id': '70001'})
-        self.assertEqual(r.status_code, 200)
-        self.assertIn('access', r.data)
-
-    def test_verified_get_info_still_logs_in_without_telegram_id(self):
-        """getInfo muvaffaqiyatli bo'lsa telegram_id shart emas (Fragment
-        tasdiqlashning o'zi)."""
-        with mock.patch('apps.services.fragment_api.get_info',
-                        return_value={'username': '@takeover_victim', 'name': 'V',
-                                      'photo': '', 'is_premium': False}):
-            r = self.client.post('/api/v1/auth/fragment-login/', {'username': 'takeover_victim'})
         self.assertEqual(r.status_code, 200)
 
 

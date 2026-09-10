@@ -139,19 +139,39 @@ class DeviceInfoTests(TestCase):
 
 
 class LoginMetaTests(TestCase):
+    """Kirish paytida IP va vaqt yozilishi — initdata-login orqali."""
+
     def setUp(self):
         Setting.clear_cache()
         Setting.set_setting('fragment_api_key', 'test-key')
-        self.user = User.objects.create_user(
-            username='meta_user', email='meta@test.local',
-        )
+        Setting.set_setting('telegram_bot_token', '123456789:TEST-TOKEN-abcdefghijklmnop')
         self.client = APIClient()
 
-    @mock.patch('apps.services.fragment_api.get_info',
-                return_value={'username': '@meta_user', 'name': '', 'photo': '', 'is_premium': False})
-    def test_login_captures_ip(self, _m):
+    def _make_initdata(self, token, user_payload):
+        import hashlib
+        import hmac
+        import json as _json
+        import urllib.parse
+        user_json = _json.dumps(user_payload, separators=(',', ':'))
+        raw = {
+            'user': user_json,
+            'auth_date': '1700000000',
+            'query_id': 'AAF-test-query',
+        }
+        check_string = '\n'.join(f'{k}={v}' for k, v in sorted(raw.items()))
+        secret = hmac.new(b'WebAppData', token.encode(), hashlib.sha256).digest()
+        digest = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
+        raw['hash'] = digest
+        encoded = {k: urllib.parse.quote(str(v), safe='') for k, v in raw.items()}
+        return '&'.join(f'{k}={v}' for k, v in encoded.items())
+
+    def test_login_captures_ip(self):
+        init_data = self._make_initdata(
+            '123456789:TEST-TOKEN-abcdefghijklmnop',
+            {'id': 42424242, 'first_name': 'Meta', 'username': 'meta_user'},
+        )
         resp = self.client.post(
-            '/api/v1/auth/fragment-login/', {'username': 'meta_user'},
+            '/api/v1/auth/initdata-login/', {'init_data': init_data},
             format='json', REMOTE_ADDR='8.8.8.8',
         )
         self.assertEqual(resp.status_code, 200)

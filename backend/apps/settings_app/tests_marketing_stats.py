@@ -134,9 +134,10 @@ class DailyMarketingTests(TestCase):
         # Operatsion guruh (-100999) o'tkazib yuborildi; faqat -100111 ga yuborildi
         self.assertEqual(len(sent), 1)
         method, payload = sent[0]
-        self.assertEqual(method, 'sendMessage')  # surat yo'q → matnli
+        # Kod endi default DONZO reklama rasmi bilan yuboradi (surat yo'q bo'lsa ham)
+        self.assertEqual(method, 'sendPhoto')
         self.assertEqual(payload['chat_id'], '-100111')
-        self.assertIn('DONZO', payload['text'])
+        self.assertIn('DONZO', payload['caption'])
         self.assertEqual(Setting.get_setting('marketing_daily_last', ''),
                          self._freeze_now().strftime('%Y-%m-%d'))
 

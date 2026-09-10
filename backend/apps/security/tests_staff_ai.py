@@ -995,9 +995,9 @@ class StaffAiTests(TestCase):
         self.assertTrue(r['ok'])
         self.assertTrue(r['answer'])
 
-    def test_marketing_reply_always_angry_persona(self):
-        # Marketing guruhlarida DONZO DOIM angry persona — staff chat rejimiga
-        # bog'liq emas. Gentle rejimda ham sotib olishga undovchi kinoya ishlaydi.
+    def test_marketing_reply_uses_sweet_persona(self):
+        # Marketing guruhlarida DONZO shirin/maqtoq persona — odamlarni
+        # maqtaydi, kompliment beradi (staff chat rejimiga bog'liq emas).
         Setting.set_setting('gemini_api_key', 'fake-key')
         Setting.set_setting('security_ai_enabled', 'true')
         Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'false')
@@ -1010,13 +1010,14 @@ class StaffAiTests(TestCase):
         with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
             r = staff_ai.marketing_reply('Free Fire ga donat qilmoqchiman', 'Gamerlar')
         self.assertTrue(r['ok'])
-        self.assertIn('jahldor', captured['prompt'])
+        self.assertIn('shirin', captured['prompt'])
         self.assertIn('REKLAMA', captured['prompt'])
         self.assertIn('Gamerlar', captured['prompt'])
         self.assertIn('Free Fire ga donat qilmoqchiman', captured['prompt'])
         self.assertEqual(r['answer'], 'DONZO da olasiz, juda tez!')
 
-    def test_marketing_reply_angry_persona_when_mode_angry(self):
+    def test_marketing_reply_sweet_persona_in_any_mode(self):
+        # Angry rejim yoqilgan bo'lsa ham marketing javobi shirin qoladi
         Setting.set_setting('gemini_api_key', 'fake-key')
         Setting.set_setting('security_ai_enabled', 'true')
         Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'true')
@@ -1029,7 +1030,7 @@ class StaffAiTests(TestCase):
         with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
             r = staff_ai.marketing_reply('kartaga pul tushmayapti deyishyapti', 'Gamerlar')
         self.assertTrue(r['ok'])
-        self.assertIn('ODAM KABI', captured['prompt'])
+        self.assertIn('shirin', captured['prompt'])
         self.assertIn('REKLAMA', captured['prompt'])
         self.assertIn('QORA RO', captured['prompt'])
         self.assertEqual(r['answer'], 'Bu gapga javob: DONZO. Hammasi.')

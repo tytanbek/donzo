@@ -516,121 +516,21 @@ fragment_login.view_class.throttle_scope = 'fragment_login'
 # first_name, last_name avtomatik saqlanadi.
 
 
-def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
-    """Telegram WebApp initData'ni HMAC-SHA256 orqali tasdiqlaydi.
-
-    Qaytadi: tasdiqlangan {user: {...}, chat: {...}, ...} yoki None (noto'g'ri).
-
-    Telefonir qiyshnasligi: Telegram rasmiy hujjatlari (core.telegram.org/bots/webapps#validating-received-data)
-    ga ko'ra:
-      1. initData'ni & bilan ajratish → berilgan hash'ni olamiz (hash).
-      2. check_string = sorted keys, <key>=<value> formatida \r
- bilan.
-      3. secret_key = HMAC_SHA256(bot_token, "WebAppData").
-      4. expected = base64url(HMAC_SHA256(secret_key, check_string)).
-      5. hash_ == expected → tasdiqlangan.
-    """
-    if not init_data_raw or not bot_token:
-        return None
-
-    try:
-        params: dict[str, str] = {}
-        for pair in init_data_raw.split('&'):
-            if '=' not in pair:
-                continue
-            k, v = pair.split('=', 1)
-            params[k] = _urldecode(v)
-    except Exception:
-        return None
-
-    hash_ = params.pop('hash', None)
-    if not hash_:
-        return None
-
-    # check_string: lexicographically sorted keys, <key>=<value>
-    # Telegram rasmiy hujjati: separator = '\n' (line feed) — '\r\n' emas!
-    # core.telegram.org/bots/webapps#validating-received-data
-    sorted_items = sorted(params.items(), key=lambda x: x[0])
-    check_string = '\n'.join(f'{k}={v}' for k, v in sorted_items)
-
-    # secret_key = HMAC_SHA256(bot_token, "WebAppData")
-    secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
-    # Telegram hash'i HEX formatda (base64 emas!)
-    # https://gist.github.com/konstantin24121/49da5d8023532d66cc4db1136435a885
-    expected_hex = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(hash_, expected_hex):
-        logger.warning(
-            '[InitData] SIG FAIL | received=%s | expected=%s | check_len=%d | bot_len=%d',
-            (hash_ or 'None')[:16],
-            (expected_hex or 'None')[:16],
-            len(check_string),
-            len(bot_token),
-        )
-        return None
-
-    return params
-
-
-def _urldecode(s: str) -> str:
-    """URL-encoded string'ni decode qiladi (+ → space, %XX → byte)."""
-    s = s.replace('+', ' ')
-    out: list[str] = []
-    i = 0
-    while i < len(s):
-        if s[i] == '%' and i + 2 < len(s):
-            try:
-                out.append(chr(int(s[i+1:i+3], 16)))
-                i += 3
-                continue
-            except ValueError:
-                pass
-        out.append(s[i])
-        i += 1
-    return ''.join(out)
-
-
-def _initdata_user_info(params: dict) -> dict:
-    """initData'dan foydalanuvchi ma'lumotlarini olib tashlaydi.
-
-    Qaytaradi: {telegram_id, username, first_name, last_name, language_code, is_premium}
-    """
-    user_raw = params.get('user', '{}')
-    try:
-        user_data = _json.loads(user_raw) if isinstance(user_raw, str) else (user_raw or {})
-    except Exception:
-        user_data = {}
-
-    chat_raw = params.get('chat', '{}')
-    try:
-        chat_data = _json.loads(chat_raw) if isinstance(chat_raw, str) else (chat_raw or {})
-    except Exception:
-        chat_data = {}
-
-    return {
-        'telegram_id': str(user_data.get('id', '')), 
-        'username': user_data.get('username', '') or '',
-        'first_name': user_data.get('first_name', '') or '',
-        'last_name': user_data.get('last_name', '') or '',
-        'language_code': user_data.get('language_code', '') or '',
-        'is_premium': bool(user_data.get('is_premium', False)),
-        'chat_type': chat_data.get('type', '') or '',
-    }
-
-
-
-@api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-@throttle_classes([ScopedRateThrottle])
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def debug_token_info(request):
-    """DEBUG: bot token haqida ma'lumot — keyin olib tashlash kerak!"""
+    """DEBUG: bot token haqida ma'lumot — FAQAT DEBUG rejimida.
+
+    Production'da bu endpoint 404 qaytaradi — token ma'lumotini oshkor
+    qiladigan diagnostika ochiq qolmasligi uchun (xavfsizlik).
+    """
+    from django.conf import settings as dj_settings
+    if not dj_settings.DEBUG:
+        return Response({'detail': 'Topilmadi'}, status=status.HTTP_404_NOT_FOUND)
     import hmac, hashlib
     bot_token = (Setting.get_setting('telegram_bot_token', '') or '').strip()
     token_len = len(bot_token)
     token_first10 = bot_token[:10] if bot_token else 'EMPTY'
-    # Token to'g'ri decrypt bo'lganini tekshirish
     has_colon = ':' in bot_token
     secret = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest() if bot_token else b''
     secret_hex = secret[:8].hex() if secret else 'N/A'
@@ -639,12 +539,13 @@ def debug_token_info(request):
         'token_first10': token_first10,
         'has_colon': has_colon,
         'secret_first8': secret_hex,
-        'note': 'REMOVE THIS ENDPOINT IN PRODUCTION!',
+        'note': 'DEBUG ONLY',
     })
 
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def initdata_login(request):
     """
     POST /api/v1/auth/initdata-login/
@@ -694,44 +595,21 @@ def initdata_login(request):
 
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
 
-        )    # initData'ni tasdiqlaymiz
+        )
+
+    # initData'ni tasdiqlaymiz — HMAC-SHA256 majburiy.
+    # SECURITY: fallback YO'Q — noto'g'ri imzo (noto'g'ri bot token yoki
+    # qo'lda tuzilgan initData) bilan login hech qachon o'tmaydi. Aks holda
+    # haker istalgan telegram_id yuborib, HMAC tekshiruvsiz kirishi mumkin
+    # edi (account takeover). Faqat Telegram tomonidan imzolangan initData
+    # qabul qilinadi.
     params = _verify_initdata(init_data_raw, bot_token)
-    
-    # FALLBACK: Agar HMAC xato bo'lsa — initData formatini tekshiramiz
-    # Agar user data bor va to'g'ri formatdagi bo'lsa — ishonamiz
-    # (vaqtinchalik — xavfsizlik pastroq, lekin login ishlaydi)
     if not params:
-        logger.warning('[InitDataLogin] HMAC xato — fallback mode ishlatiladi')
-        try:
-            # initData ni parse qilish (hashsiz)
-            fallback_params = {}
-            for pair in init_data_raw.split('&'):
-                if '=' not in pair:
-                    continue
-                k, v = pair.split('=', 1)
-                fallback_params[k] = _urldecode(v)
-            
-            # user data borligini tekshirish
-            user_raw = fallback_params.get('user', '{}')
-            user_data = _json.loads(user_raw) if isinstance(user_raw, str) else (user_raw or {})
-            telegram_id = str(user_data.get('id', ''))
-            
-            if telegram_id and len(telegram_id) > 5:
-                # Telegram ID to'g'ri ko'rinadi — fallback ishlatamiz
-                params = fallback_params
-                logger.info('[InitDataLogin] FALLBACK: telegram_id=%s ishonildi', telegram_id)
-            else:
-                logger.warning('[InitDataLogin] initData format noto\'g\'ri — user data yo\'q')
-                return Response(
-                    {'detail': 'Kirish tasdiqlanmadi'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        except Exception as e:
-            logger.error('[InitDataLogin] Fallback parse xatosi: %s', str(e))
-            return Response(
-                {'detail': 'Kirish tasdiqlanmadi'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        logger.warning('[InitDataLogin] HMAC tasdiqlanmadi — kirish rad etildi')
+        return Response(
+            {'detail': 'Kirish tasdiqlanmadi. Telegram orqali WebApp\'ni oching.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
 
 
@@ -921,6 +799,11 @@ def initdata_login(request):
     })
 
 
+# initdata_login ScopedRateThrottle ishlatadi — scope o'rnatilmagan bo'lsa
+# brute-force himoyasi ishlamaydi (har kim cheksiz urinish mumkin).
+# telegram_auth scope'i settings'da 20/min qilib belgilangan.
+initdata_login.view_class.throttle_scope = 'telegram_auth'
+
 
 # ── BOT ORQALI TASDIQLASH KODI ────────────────────────────────────────────
 
@@ -1033,6 +916,34 @@ def _urldecode(s: str) -> str:
         out.append(s[i])
         i += 1
     return ''.join(out)
+
+
+def _initdata_user_info(params: dict) -> dict:
+    """initData'dan foydalanuvchi ma'lumotlarini olib tashlaydi.
+
+    Qaytaradi: {telegram_id, username, first_name, last_name, language_code, is_premium}
+    """
+    user_raw = params.get('user', '{}')
+    try:
+        user_data = _json.loads(user_raw) if isinstance(user_raw, str) else (user_raw or {})
+    except Exception:
+        user_data = {}
+
+    chat_raw = params.get('chat', '{}')
+    try:
+        chat_data = _json.loads(chat_raw) if isinstance(chat_raw, str) else (chat_raw or {})
+    except Exception:
+        chat_data = {}
+
+    return {
+        'telegram_id': str(user_data.get('id', '')),
+        'username': user_data.get('username', '') or '',
+        'first_name': user_data.get('first_name', '') or '',
+        'last_name': user_data.get('last_name', '') or '',
+        'language_code': user_data.get('language_code', '') or '',
+        'is_premium': bool(user_data.get('is_premium', False)),
+        'chat_type': chat_data.get('type', '') or '',
+    }
 
 
 def _verify_username_real(username: str):

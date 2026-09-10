@@ -158,8 +158,14 @@ class BalanceProvider(BaseProvider):
             # 5% cashback (idempotent — same order can never credit twice).
             # Inside the same atomic block, so the credit is all-or-nothing
             # with the payment itself.
-            from apps.users.referral_service import credit_referral_cashback
+            from apps.users.referral_service import credit_referral_cashback, grant_referral_milestone_rewards
             credit_referral_cashback(order)
+            # Milestone tekshirish: referal soni 30 ga yetgan bo'lsa — Telegram Premium sovg'asi
+            try:
+                if order.customer and order.customer.referred_by:
+                    grant_referral_milestone_rewards(order.customer.referred_by)
+            except Exception:
+                pass  # milestone xatosi to'lovni buzmasligi kerak
 
         # Notify the customer on Telegram that their payment succeeded
         from apps.users.telegram_notify import notify_payment_success

@@ -83,6 +83,14 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
 
+    def save(self, *args, **kwargs):
+        # Avtomatik referral code yaratish — har yangi foydalanuvchi o'z
+        # referral kodiga ega bo'lishi shart (Telegram'dan kirganlar ham).
+        if not self.referral_code:
+            import uuid as _uuid
+            self.referral_code = _uuid.uuid4().hex[:10].upper()
+        super().save(*args, **kwargs)
+
     def has_permission(self, required_roles):
         """Check if user has required role level."""
         role_hierarchy = {
