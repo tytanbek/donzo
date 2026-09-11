@@ -31,7 +31,7 @@ import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = os.getenv('PORT', '8000')
-PING_URL = (os.getenv('RENDER_EXTERNAL_URL') or '').rstrip('/')
+PING_URL = (os.getenv('RENDER_EXTERNAL_URL') or 'https://donzo-backend-v8oz.onrender.com').rstrip('/')
 PING_INTERVAL = int(os.getenv('PING_INTERVAL', '60'))  # 1 daqiqa — Render free tier 15 daqiqada o'chirmaydi
 AUDIT_HOUR = int(os.getenv('AUDIT_REPORT_HOUR', '9'))
 CARD_REPORT_HOUR = int(os.getenv('CARD_REPORT_HOUR', '4'))  # UTC — 09:00 Toshkent
