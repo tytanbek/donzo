@@ -281,15 +281,22 @@ def rotate_active_card(exclude=None) -> dict:
 
 
 def generate_unique_amount(requested: Decimal, offset_max: int) -> Decimal:
-    """requested + random(0..offset_max) — the exact amount the user sends.
+    """Deterministic unique amount: try the exact requested sum first;
+    only add +1, +2, … if the amount is already claimed.
 
-    The offset is the *identification* channel: two customers who pick the
-    same nominal amount get different amounts to send, so an incoming
-    transfer unambiguously maps to exactly one pending request.
+    Old behaviour was random(0..offset_max) which forced customers to send
+    odd amounts like 15 023 even when nobody else was topping up 15 000.
+    New behaviour:
+      1. Return the exact requested amount (15 000).
+      2. If that is already pending → return requested + 1 (15 001).
+      3. … and so on up to requested + offset_max.
     """
-    if offset_max <= 0:
-        return requested
-    return requested + Decimal(random.randint(0, offset_max))
+    # Caller loops over candidates; this helper just returns sequential
+    # offsets from 0..offset_max.  The *actual* collision check lives in
+    # create_topup_request — we just yield plausible values.
+    #
+    # For backward compat: if offset_max is 0 we still return requested.
+    return requested  # first candidate — real logic in create_topup_request
 
 
 def create_topup_request(user, balance_tx, requested_amount: Decimal, timeout_minutes: int = None,
@@ -313,8 +320,8 @@ def create_topup_request(user, balance_tx, requested_amount: Decimal, timeout_mi
     # ever slips through.
     with transaction.atomic():
         unique = None
-        for _ in range(50):
-            candidate = generate_unique_amount(requested_amount, offset_max)
+        for offset in range(offset_max + 1):
+            candidate = requested_amount + Decimal(offset)
             if not CardTopupRequest.objects.select_for_update().filter(
                 unique_amount=candidate, status='pending',
             ).exists():
