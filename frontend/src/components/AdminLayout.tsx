@@ -125,7 +125,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Shared sidebar body (used by both desktop aside and mobile drawer)
   const renderSidebarBody = (collapseable: boolean) => (
-    <div className="h-full glass-card rounded-none border-l-0 border-t-0 border-b-0 p-4 flex flex-col">
+    <div className="h-full p-4 flex flex-col" style={{ background: 'linear-gradient(180deg, rgba(15, 20, 38, 0.92) 0%, rgba(10, 14, 26, 0.88) 100%)', backdropFilter: 'blur(50px) saturate(1.5)', WebkitBackdropFilter: 'blur(50px) saturate(1.5)', borderRight: '1px solid rgba(255, 255, 255, 0.06)' }}>
       {/* Toggle */}
       <div className="flex items-center justify-between mb-4">
         {(!isCollapsed || !collapseable) && (
@@ -214,7 +214,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen flex pt-20">
       {/* ═══ Mobile top bar (hamburger) — site Header (z-50, top-0) ostida ═══ */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 flex items-center px-4 bg-[#0F172A]/90 backdrop-blur-xl border-b border-[#00F5FF]/10">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 flex items-center px-4" style={{ background: 'rgba(10, 15, 26, 0.8)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
         <button
           onClick={() => setIsMobileOpen(true)}
           className="p-2.5 rounded-xl hover:bg-white/5 text-[#94A3B8] hover:text-[#00F5FF] transition-all duration-200"

@@ -14,6 +14,7 @@ import WebSocketInit from '@/components/WebSocketInit';
 import FragmentLogin from '@/components/FragmentLogin';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
+import './liquid-glass.css';
 
 // Routes that keep the classic desktop shell (staff panels only)
 const CLASSIC_SHELL_PREFIXES = ['/admin', '/operator', '/support'];

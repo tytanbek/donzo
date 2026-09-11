@@ -52,7 +52,7 @@ export default function Header() {
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? 'bg-[#0F172A]/90 backdrop-blur-xl border-b border-[#00F5FF]/10 shadow-lg shadow-[#00F5FF]/5'
+          ? 'bg-[#0a0f1a]/80 backdrop-blur-[40px] saturate-150 border-b border-white/[0.06] shadow-[0_4px_24px_rgba(0,0,0,0.3)]'
           : 'bg-transparent'
       }`}
     >
