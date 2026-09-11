@@ -8,7 +8,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'https://donzo-backend-lzmd.onrender.com/api/:path*',
+        destination: 'https://donzo-backend-v8oz.onrender.com/api/:path*',
       },
     ];
   },
@@ -34,7 +34,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'images.unsplash.com', pathname: '/**' },
       { protocol: 'https', hostname: 'www.pubgmobile.com', pathname: '/**' },
       { protocol: 'https', hostname: 'cdn.akamai.steamstatic.com', pathname: '/**' },
-      { protocol: 'https', hostname: 'donzo-backend-lzmd.onrender.com', pathname: '/**' },
+      { protocol: 'https', hostname: 'donzo-backend-v8oz.onrender.com', pathname: '/**' },
       { protocol: 'https', hostname: 'donzo-eight.vercel.app', pathname: '/**' },
     ],
   },
@@ -55,7 +55,7 @@ try {
 
   if (vercelUrl) {
     envOverrides.env = envOverrides.env || {};
-    envOverrides.env.NEXT_PUBLIC_API_URL = `https://donzo-backend-lzmd.onrender.com/api/v1`;
+    envOverrides.env.NEXT_PUBLIC_API_URL = `https://donzo-backend-v8oz.onrender.com/api/v1`;
   }
 
   Object.assign(nextConfig, envOverrides);

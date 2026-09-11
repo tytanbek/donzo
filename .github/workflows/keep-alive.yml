@@ -12,7 +12,7 @@ jobs:
       - name: Ping backend
         run: |
           for i in 1 2 3; do
-            code=$(curl -sk --max-time 30 -o /dev/null -w "%{http_code}" "https://donzo-backend-lzmd.onrender.com/health/" 2>/dev/null)
+            code=$(curl -sk --max-time 30 -o /dev/null -w "%{http_code}" "https://donzo-backend-v8oz.onrender.com/health/" 2>/dev/null)
             echo "Attempt $i: HTTP $code"
             if [ "$code" = "200" ]; then
               echo "Backend is alive!"
