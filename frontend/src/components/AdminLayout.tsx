@@ -214,7 +214,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen flex pt-20">
       {/* ═══ Mobile top bar (hamburger) — site Header (z-50, top-0) ostida ═══ */}
-      <div className="lg:hidden fixed top-20 left-0 right-0 z-40 h-14 flex items-center px-4 bg-[#0F172A]/90 backdrop-blur-xl border-b border-[#00F5FF]/10">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 flex items-center px-4 bg-[#0F172A]/90 backdrop-blur-xl border-b border-[#00F5FF]/10">
         <button
           onClick={() => setIsMobileOpen(true)}
           className="p-2.5 rounded-xl hover:bg-white/5 text-[#94A3B8] hover:text-[#00F5FF] transition-all duration-200"
@@ -246,7 +246,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMobileOpen(false)}
-              className="lg:hidden fixed inset-0 top-[136px] z-30 bg-black/60 backdrop-blur-sm"
+              className="lg:hidden fixed inset-0 top-14 z-30 bg-black/60 backdrop-blur-sm"
             />
             {/* Drawer */}
             <motion.aside
@@ -254,7 +254,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'tween', duration: 0.25 }}
-              className="lg:hidden fixed left-0 top-[136px] bottom-0 z-40 w-72 max-w-[85vw]"
+              className="lg:hidden fixed left-0 top-14 bottom-0 z-40 w-72 max-w-[85vw]"
             >
               {renderSidebarBody(false)}
             </motion.aside>
@@ -264,7 +264,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* ═══ Main Content ═══ */}
       <main className={`flex-1 transition-all duration-300 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-[56px] pb-8 lg:pt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8 pb-8">
           {children}
         </div>
       </main>
