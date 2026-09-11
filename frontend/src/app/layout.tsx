@@ -95,6 +95,30 @@ export default function RootLayout({
     return () => { cancelled = true; };
   }, [setUser, setAuthChecked]);
 
+  // ── Telegram WebApp FULLSCREEN ──────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg) {
+        // Fullscreen so'rash (Telegram 10.0+)
+        if (typeof tg.requestFullscreen === 'function') {
+          tg.requestFullscreen();
+        }
+        // Header ni yashirish — to'liq ekran uchun
+        if (typeof tg.setHeaderColor === 'function') {
+          tg.setHeaderColor('#0F172A');
+        }
+        if (typeof tg.setBackgroundColor === 'function') {
+          tg.setBackgroundColor('#0F172A');
+        }
+        // Expand qilish — kichik oynani to'liq ekranga
+        if (typeof tg.expand === 'function') {
+          tg.expand();
+        }
+      }
+    } catch {}
+  }, []);
+
   // ── Rol bo'yicha yo'naltirish ────────────────────────────────────────────
   // Staff paneldan tashqariga chiqolmaydi; mijoz staff panelga kira olmaydi.
   useEffect(() => {
@@ -114,9 +138,22 @@ export default function RootLayout({
       return (
         <html lang="uz">
           <head>
-            {/* Telegram SDK — FAQAT username'ni avtomatik o'qish uchun
-                (kirish Fragment API orqali tasdiqlanadi, initData tekshirilmaydi) */}
-            <script src="https://telegram.org/js/telegram-web-app.js" async />
+            {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
+            <script src="https://telegram.org/js/telegram-web-app.js"></script>
+            <script dangerouslySetInnerHTML={{ __html: `
+              document.addEventListener('DOMContentLoaded', function() {
+                try {
+                  var tg = window.Telegram && window.Telegram.WebApp;
+                  if (tg) {
+                    tg.ready();
+                    tg.expand();
+                    if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
+                    tg.setHeaderColor('#0F172A');
+                    tg.setBackgroundColor('#0F172A');
+                  }
+                } catch(e) {}
+              });
+            ` }} />
             <title>DONZO - LEVEL UP YOUR GAME</title>
             <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
             <link rel="icon" href="/images/donzo.png" type="image/png" />
@@ -135,10 +172,23 @@ export default function RootLayout({
   // Token yo'q — butun ilova login ekranini ko'rsatadi
   if (!isAuthenticated || !user) {
     return (
-      <html lang="uz">
-        <head>
-            {/* Telegram SDK — FAQAT username'ni avtomatik o'qish uchun */}
-            <script src="https://telegram.org/js/telegram-web-app.js" async />
+      <html lang="uz">          <head>
+            {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
+            <script src="https://telegram.org/js/telegram-web-app.js"></script>
+            <script dangerouslySetInnerHTML={{ __html: `
+              document.addEventListener('DOMContentLoaded', function() {
+                try {
+                  var tg = window.Telegram && window.Telegram.WebApp;
+                  if (tg) {
+                    tg.ready();
+                    tg.expand();
+                    if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
+                    tg.setHeaderColor('#0F172A');
+                    tg.setBackgroundColor('#0F172A');
+                  }
+                } catch(e) {}
+              });
+            ` }} />
           <title>DONZO - LEVEL UP YOUR GAME</title>
           <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
           <link rel="icon" href="/images/donzo.png" type="image/png" />
@@ -155,8 +205,22 @@ export default function RootLayout({
   return (
     <html lang="uz">
       <head>
-        {/* Telegram SDK — FAQAT username'ni avtomatik o'qish uchun */}
-        <script src="https://telegram.org/js/telegram-web-app.js" async />
+        {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
+        <script src="https://telegram.org/js/telegram-web-app.js"></script>
+        <script dangerouslySetInnerHTML={{ __html: `
+          document.addEventListener('DOMContentLoaded', function() {
+            try {
+              var tg = window.Telegram && window.Telegram.WebApp;
+              if (tg) {
+                tg.ready();
+                tg.expand();
+                if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
+                tg.setHeaderColor('#0F172A');
+                tg.setBackgroundColor('#0F172A');
+              }
+            } catch(e) {}
+          });
+        ` }} />
         <title>DONZO - LEVEL UP YOUR GAME</title>
         <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
         <link rel="icon" href="/images/donzo.png" type="image/png" />
