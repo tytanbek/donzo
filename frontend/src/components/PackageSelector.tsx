@@ -42,7 +42,7 @@ export default function PackageSelector({ packages, selectedId, onSelect }: Pack
           <div className="text-sm font-medium text-white mb-1">{pkg.name}</div>
           <div className="text-xs text-[#64748B] mb-2">{pkg.amount_label}</div>
           <div className="text-lg font-bold neon-price">
-            {Number(pkg.price).toLocaleString()} {pkg.currency}
+            {Number(pkg.price).toLocaleString()} so'm
           </div>
         </motion.button>
       ))}

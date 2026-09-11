@@ -532,7 +532,7 @@ export default function ServiceDetailPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-base text-white font-semibold">Jami</span>
                   <span className="text-xl font-bold neon-price">
-                    {Number(selectedPackage.price).toLocaleString()} {selectedPackage.currency}
+                    {Number(selectedPackage.price).toLocaleString()} so'm
                   </span>
                 </div>
                 </div>
