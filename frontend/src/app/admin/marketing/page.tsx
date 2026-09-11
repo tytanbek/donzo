@@ -72,14 +72,21 @@ export default function AdminMarketingPage() {
           marketing_ad_prob: Math.round((Number.isFinite(ad) ? ad : 0.6) * 100),
           marketing_rate_per_hour: parseInt(s.marketing_rate_per_hour ?? '5', 10) || 5,
         }));
-      } catch (e) { console.error('Marketing settings error:', e); }
+      } catch (e) {
+        console.error('Marketing settings error:', e);
+        toast.error('Marketing sozlamalarini yuklab bo\'lmadi');
+      }
       finally { setIsLoading(false); }
     };
     const fetchStats = async () => {
       try {
         const res = await adminAPI.marketingStats();
         setStats(res.data || res);
-      } catch (e) { console.error('Marketing stats error:', e); }
+      } catch (e: any) {
+        console.error('Marketing stats error:', e);
+        // Stats endpoint might not exist yet — show empty state gracefully
+        setStats({ totals: { groups: 0, replies: 0, ads: 0, joins: 0 }, groups: [], daily: [] });
+      }
       finally { setStatsLoading(false); }
     };
     fetch();
