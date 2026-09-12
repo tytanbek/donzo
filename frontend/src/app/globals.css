@@ -19,7 +19,10 @@ body {
   background: #0A0E1A;
   color: #F8FAFC;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ─── Gaming Grid Background ─── */
@@ -574,7 +577,7 @@ body {
   width: 100%;
   max-width: 430px;
   z-index: 100;
-  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .bottom-nav-shell {
@@ -1047,8 +1050,8 @@ body {
 
 /* Page scroll area below fixed header */
 .mini-page {
-  padding-top: 70px;
-  padding-bottom: 92px;
+  padding-top: calc(68px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Slim card for sections inside pages */

@@ -165,16 +165,25 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* ─── Mini Header — Liquid Glass ─── */
+/* ─── Mini Header — Liquid Glass + Safe Area ─── */
 .mini-header {
   background: rgba(8, 12, 22, 0.75) !important;
   backdrop-filter: blur(40px) saturate(1.5) !important;
   -webkit-backdrop-filter: blur(40px) saturate(1.5) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.03) !important;
+  padding-top: env(safe-area-inset-top, 0px) !important;
 }
 
-/* ─── Bottom Nav — Liquid Glass ─── */
+.mini-header-inner {
+  padding-top: 2px;
+}
+
+/* ─── Bottom Nav — Liquid Glass + Safe Area ─── */
+.bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+
 .bottom-nav-shell {
   background: rgba(8, 12, 22, 0.8) !important;
   backdrop-filter: blur(40px) saturate(1.5) !important;
@@ -335,6 +344,12 @@ aside.glass-card {
   }
 }
 
+/* ─── Safe Area Page Padding — Liquid ─── */
+.mini-page {
+  padding-top: calc(68px + env(safe-area-inset-top, 0px)) !important;
+  animation: liquid-in 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
 /* Smooth page transitions */
 @keyframes liquid-in {
   from {
@@ -349,6 +364,68 @@ aside.glass-card {
   }
 }
 
-.mini-page {
-  animation: liquid-in 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+/* ─── iPhone Dynamic Island safe zone — body top inset ─── */
+body {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ─── Mini Cards — Liquid Glass Round ─── */
+.mini-card {
+  border-radius: 22px !important;
+  background: linear-gradient(180deg, rgba(18, 26, 44, 0.86) 0%, rgba(9, 14, 28, 0.94) 100%) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.28s ease !important;
+}
+
+.mini-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* ─── Balance Hero — Liquid Glass ─── */
+.mini-balance-hero {
+  border-radius: 26px !important;
+  backdrop-filter: blur(30px) !important;
+  -webkit-backdrop-filter: blur(30px) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ─── Pill Button — Liquid Glass ─── */
+.pill-btn {
+  border-radius: 999px !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: 0 8px 24px rgba(0, 245, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+}
+
+/* ─── Mini Panel — Liquid Glass ─── */
+.mini-panel {
+  border-radius: 20px !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ─── Mini Order Card — Liquid Glass ─── */
+.mini-order-card {
+  border-radius: 18px !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ─── Amount Chip — Liquid Glass ─── */
+.amount-chip {
+  border-radius: 18px !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.amount-chip.active {
+  box-shadow: 0 0 24px rgba(0, 245, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }

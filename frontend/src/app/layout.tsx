@@ -155,6 +155,7 @@ export default function RootLayout({
                 } catch(e) {}
               });
             ` }} />
+            <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
             <title>DONZO - LEVEL UP YOUR GAME</title>
             <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
             <link rel="icon" href="/images/donzo.png" type="image/png" />
@@ -190,6 +191,7 @@ export default function RootLayout({
                 } catch(e) {}
               });
             ` }} />
+          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
           <title>DONZO - LEVEL UP YOUR GAME</title>
           <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
           <link rel="icon" href="/images/donzo.png" type="image/png" />
@@ -222,6 +224,7 @@ export default function RootLayout({
             } catch(e) {}
           });
         ` }} />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
         <title>DONZO - LEVEL UP YOUR GAME</title>
         <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
         <link rel="icon" href="/images/donzo.png" type="image/png" />
