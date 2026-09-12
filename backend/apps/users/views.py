@@ -849,27 +849,32 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
     """Telegram WebApp initData'ni HMAC-SHA256 orqali tasdiqlaydi.
 
     Qaytadi: tasdiqlangan {user: {...}, chat: {...}, ...} yoki None (noto'g'ri).
-    
-    Telefonir qiyshnasligi: Telegram rasmiy hujjatlari (https://core.telegram.org/bots/webapps#validating-received-data)
+
+    Telegram rasmiy hujjatlari (https://core.telegram.org/bots/webapps#validating-received-data)
     ga ko'ra:
-      1. initData'ni & bilan ajratish → berilgan hash'ni olamiz (hash).
-      2. boga_check_string = & bilan ajratilgan kalitlar (dialog_data[...])
-         ni lexicographically sakrash, <key>=<value> formatida birlashtirish.
-      3. secret_key = HMAC_SHA256(bot_token, "WebAppData").
-      4. expected = HMAC_SHA256(secret_key, boga_check_string).
-      5. base64url(expected) == hash → tasdiqlangan.
+      1. initData'ni & bilan ajratib, hash maydonini olamiz.
+      2. data_check_string = qolgan maydonlar lexicographically saralangan,
+         <key>=<value> formatida '\\n' bilan birlashtirilgan. Qiymatlar
+         URL-DECODE qilingan bo'lishi shart (UTF-8 to'g'ri!).
+      3. secret_key = HMAC_SHA256(key="WebAppData", msg=bot_token).
+      4. expected = HMAC_SHA256(secret_key, data_check_string) — HEX.
+      5. expected == hash → tasdiqlangan.
+
+    MUHIM: qiymatlarni urllib.parse.unquote bilan decode qilamiz —
+    qo'lda yozilgan decoder UTF-8 ko'p baytli belgilarni (masalan,
+    kirill ismlari: %D0%9C...) buzib yuboradi va HMAC doim o'tmaydi.
     """
     if not init_data_raw or not bot_token:
         return None
 
     try:
-        params = {}
-        for pair in init_data_raw.split('&'):
-            if '=' not in pair:
-                continue
-            k, v = pair.split('=', 1)
-            params[k] = _urldecode(v)
+        from urllib.parse import parse_qsl
+        # keep_blank_values=True — bo'sh qiymatlar ham data_check_string'ga kiradi.
+        # strict_parsing=False — ortiqcha juftliklarni o'tkazib yubormaydi.
+        pairs = parse_qsl(init_data_raw, keep_blank_values=True)
+        params = {k: v for k, v in pairs}
     except Exception:
+        logger.exception('[InitData] parse xato')
         return None
 
     hash_ = params.pop('hash', None)
@@ -901,21 +906,13 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
 
 
 def _urldecode(s: str) -> str:
-    """URL-encoded string'ni decode qiladi (+ → space, %XX → byte)."""
-    s = s.replace('+', ' ')
-    out = []
-    i = 0
-    while i < len(s):
-        if s[i] == '%' and i + 2 < len(s):
-            try:
-                out.append(chr(int(s[i+1:i+3], 16)))
-                i += 3
-                continue
-            except ValueError:
-                pass
-        out.append(s[i])
-        i += 1
-    return ''.join(out)
+    """URL-encoded string'ni decode qiladi (+ → space, %XX → UTF-8).
+
+    urllib.parse.unquote ishlatiladi — UTF-8 ko'p baytli belgilar
+    (kirill ismlari va boshqalar) to'g'ri decode bo'ladi.
+    """
+    from urllib.parse import unquote
+    return unquote(s.replace('+', ' '))
 
 
 def _initdata_user_info(params: dict) -> dict:

@@ -21,8 +21,10 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Safe area faqat bir marta — header/nav ichida hisoblanadi (ikki marta
+     qo'shilsa tepada katta bo'shliq paydo bo'ladi). */
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* ─── Gaming Grid Background ─── */
@@ -472,6 +474,8 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(0, 245, 255, 0.08);
+  /* Telegram fullscreen'da env() 0 qaytaradi — --safe-top JS API'dan keladi */
+  padding-top: var(--safe-top, 0px);
 }
 
 .mini-header-inner {
@@ -577,7 +581,7 @@ body {
   width: 100%;
   max-width: 430px;
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .bottom-nav-shell {
@@ -1050,8 +1054,9 @@ body {
 
 /* Page scroll area below fixed header */
 .mini-page {
-  padding-top: calc(68px + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  /* header (68px) + safe area + 10px nafas joyi — Dynamic Island ostida */
+  padding-top: calc(80px + var(--safe-top, 0px));
+  padding-bottom: calc(92px + var(--safe-bottom, 0px));
 }
 
 /* Slim card for sections inside pages */

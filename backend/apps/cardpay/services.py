@@ -995,7 +995,21 @@ def build_health_report() -> str:
             if not _sess:
                 _check('User Client', True, 'kirish kutilmoqda')
             else:
-                _check('User Client', False, uc_detail)
+                # DB fallback: slot 1 workeri (va qo'shimcha slotlar) DB'ga
+                # last_heartbeat yozadi (har 30s). Lokal stats fayli Render
+                # ephemeral FS'da yo'qolishi mumkin — DB yozuvi ishonchliroq.
+                from .models import UserClientAccount
+                _uc_db = UserClientAccount.objects.filter(
+                    enabled=True, authorized=True,
+                ).order_by('-last_heartbeat').first()
+                if _uc_db and _uc_db.last_heartbeat:
+                    _db_age = (timezone.now() - _uc_db.last_heartbeat).total_seconds()
+                    if _db_age < 180:
+                        _check('User Client', True, 'ONLINE')
+                    else:
+                        _check('User Client', False, f'heartbeat eskirgan ({int(_db_age)}s)')
+                else:
+                    _check('User Client', False, uc_detail)
         except Exception:
             _check('User Client', False, uc_detail)
     else:

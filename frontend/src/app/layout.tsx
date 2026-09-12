@@ -57,6 +57,9 @@ export default function RootLayout({
   const isClassicShell = CLASSIC_SHELL_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(prefix + '/')
   );
+  // Admin CRM'da site Header o'rniga AdminLayout'ning o'z mobile bari bor —
+  // ikkisi ustma-ust tushsa hamburger bosilmay qoladi (telefonda).
+  const isAdminShell = pathname === '/admin' || pathname.startsWith('/admin/');
 
   // ── AUTH AVTO-KIRISH ──────────────────────────────────────────────────────
   // 1. Token bor → profil avtomatik yuklanadi (8s timeout bilan).
@@ -96,7 +99,7 @@ export default function RootLayout({
     return () => { cancelled = true; };
   }, [setUser, setAuthChecked]);
 
-  // ── Telegram WebApp FULLSCREEN ──────────────────────────────────────────
+  // ── Telegram WebApp FULLSCREEN + SAFE AREA (Dynamic Island fix) ──────────────────────────────────────────
   useEffect(() => {
     try {
       const tg = (window as any).Telegram?.WebApp;
@@ -118,6 +121,32 @@ export default function RootLayout({
         }
       }
     } catch {}
+
+    // Safe area → CSS variables. Telegram iOS fullscreen WebView'da
+    // env(safe-area-inset-top) 0 qaytaradi — shuning uchun Telegram JS API
+    // (safeAreaInset/contentSafeAreaInset) qiymatlarini CSS var'ga yozamiz.
+    // CSS max() env() bilan kattaroqini tanlaydi (brauzer + Telegram).
+    const applySafeArea = () => {
+      try {
+        const tg2: any = (window as any).Telegram?.WebApp;
+        const st = Number(tg2?.safeAreaInset?.top || 0);
+        const sb = Number(tg2?.safeAreaInset?.bottom || 0);
+        const cst = Number(tg2?.contentSafeAreaInset?.top || 0);
+        const root = document.documentElement;
+        root.style.setProperty('--tg-safe-top', `${Math.max(st, cst)}px`);
+        root.style.setProperty('--tg-safe-bottom', `${sb}px`);
+      } catch { /* noop */ }
+    };
+    applySafeArea();
+    try {
+      const tg3: any = (window as any).Telegram?.WebApp;
+      tg3?.onEvent?.('safeAreaChanged', applySafeArea);
+      tg3?.onEvent?.('contentSafeAreaChanged', applySafeArea);
+      tg3?.onEvent?.('viewportChanged', applySafeArea);
+    } catch { /* noop */ }
+    // Safari'da env() qiymati kech keladi — 1s dan keyin ham qayta o'lchaymiz
+    const t = window.setTimeout(applySafeArea, 1000);
+    return () => { window.clearTimeout(t); };
   }, []);
 
   // ── Rol bo'yicha yo'naltirish ────────────────────────────────────────────
@@ -235,7 +264,7 @@ export default function RootLayout({
         <Particles />
         {isClassicShell ? (
           <div className="relative z-10 flex flex-col min-h-screen">
-            <Header />
+            {!isAdminShell && <Header />}
             <main className="flex-1">
               <Toaster
                 position="top-right"
