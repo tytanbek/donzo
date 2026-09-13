@@ -315,22 +315,23 @@ def check_user_client() -> dict:
                     'detail': 'ishga tushmoqda…'}
         return {'name': 'User Client', 'port': '-', 'status': 'down',
                 'detail': f'heartbeat eskirgan ({int(age_s)}s)'}
-    # CLOUD: stats fayli bo'lmasa (fresh container) — Neon DB'dagi sessiya
-    # va login holatiga qaraymiz. Sessiya bor + login kutilmayotgan bo'lsa
-    # worker qayta boshlanishi mumkin; sessiya yo'q yoki login_pending
-    # bo'lsa — qayta kirish kerakligini aniq ko'rsatamiz.
+    # Stats fayli YO'Q (ephemeral FS tozalangan / yangi konteyner / lokal).
+    # 1) Worker heartbeat DB'da yangi bo'lsa — worker TIRIK, stats fayli
+    #    shunchaki yo'qolgan yoki hali yozilmagan. Bu signal lokal ham,
+    #    cloud'da ham bir xil ishonchli (fayl tizimidan mustaqil).
+    fresh, _age = _uc_db_heartbeat_fresh()
+    if fresh:
+        return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                'detail': 'ONLINE (db heartbeat)'}
+    # 2) Konteyner hali yosh — worker stats faylini hali yozmagan bo'lishi
+    #    mumkin. Soxta 'o'lik' signali o'rniga 'ishga tushmoqda…'.
+    if _container_started_recently():
+        return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                'detail': 'ishga tushmoqda…'}
+    # CLOUD: Neon DB'dagi sessiya va login holatiga qaraymiz. Sessiya bor +
+    # login kutilayotgan bo'lsa worker qayta boshlanadi; sessiya yo'q yoki
+    # login_pending bo'lsa — qayta kirish kerakligini aniq ko'rsatamiz.
     if IS_CLOUD:
-        # 1) Worker heartbeat DB'da yangi bo'lsa — worker TIRIK, stats fayli
-        #    shunchaki ephemeral FS'da yo'qolgan yoki hali yozilmagan.
-        fresh, _age = _uc_db_heartbeat_fresh()
-        if fresh:
-            return {'name': 'User Client', 'port': '-', 'status': 'ok',
-                    'detail': 'ONLINE (db heartbeat)'}
-        # 2) Konteyner hali yosh — worker stats faylini hali yozmagan bo'lishi
-        #    mumkin. Soxta 'o'lik' signali o'rniga 'ishga tushmoqda…'.
-        if _container_started_recently():
-            return {'name': 'User Client', 'port': '-', 'status': 'ok',
-                    'detail': 'ishga tushmoqda…'}
         try:
             from apps.settings_app.models import Setting
             b64 = Setting.get_setting('user_client_session_b64', '') or ''
