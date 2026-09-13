@@ -221,26 +221,35 @@ def _stats_started(account: dict):
 
 
 def _stats_heartbeat():
+    """Har 30s heartbeat — lokal fayl + DB (Render ephemeral FS'dan mustaqil)."""
+    # 1) Lokal stats fayli (admin panel uchun)
     if _is_legacy_slot():
         user_client_stats.heartbeat()
-        # Slot 1 heartbeat'ini Neon DB'ga ham yozamiz — Render ephemeral
-        # FS'da lokal stats fayli yo'qoladi va health report slot-1 clientni
-        # ishlamayotgan deb noto'g'ri ko'rsatardi ('heartbeat eskirgan').
-        # DB'dagi yozuv fayl tizimidan mustaqil ishonchli signal.
+    # 2) DB — health report uchun (har slot uchun)
+    # Slot 1 (legacy): UserClientAccount jadvalida row bo'lmasligi mumkin,
+    # shuning uchun ham Setting kalitiga ham yozamiz (zaxira signal).
+    # Slot 2+: faqat UserClientAccount — qo'shimcha slotlarda row mavjud.
+    try:
+        from django.utils import timezone as _tz
+        _now = _tz.now()
+        # Har qanday slot uchun: UserClientAccount.last_heartbeat
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.filter(slot=SLOT).update(
+            last_heartbeat=_now, last_error='', last_error_at=None)
+    except Exception as exc:
+        logger.warning('UC heartbeat DB yozuvi xatosi (slot %s): %s',
+                       SLOT, type(exc).__name__)
+    if _is_legacy_slot():
+        # Legacy slot: qo'shimcha Setting kalit (UserClientAccount row
+        # mavjud bo'lmasa ham health report ishonchli signal oladi).
         try:
-            from django.utils import timezone
+            from django.utils import timezone as _tz
             from apps.settings_app.models import Setting
             Setting.set_setting('user_client_worker_heartbeat_at',
-                                timezone.now().isoformat())
-        except Exception:
-            pass
-        return
-    try:
-        from django.utils import timezone
-        from apps.cardpay.models import UserClientAccount
-        UserClientAccount.objects.filter(slot=SLOT).update(last_heartbeat=timezone.now())
-    except Exception:
-        pass
+                                _tz.now().isoformat())
+        except Exception as exc:
+            logger.warning('UC heartbeat Setting yozuvi xatosi: %s',
+                           type(exc).__name__)
 
 
 def _stats_event(kind: str):
