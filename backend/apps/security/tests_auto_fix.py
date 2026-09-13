@@ -2,16 +2,20 @@
 """Auto-fix AI kod tuzatish: backup + revert testlari."""
 import os
 import tempfile
+import time
 import unittest
+from datetime import timedelta
 from unittest import mock
 
 import django
 from django.test import TestCase
+from django.utils import timezone
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from apps.security import auto_fix
+from apps.security import auto_fix, system_health
+from apps.settings_app.models import Setting
 
 
 class AiFixBackupRevertTests(TestCase):
@@ -155,3 +159,102 @@ class AiFixBackupRevertTests(TestCase):
         res = auto_fix.ai_code_fix('xato', 'test_owner')
         self.assertFalse(res['ok'])
         self.assertIn('Gemini', res.get('error', ''))
+
+
+class HealthFalseAlarmTests(TestCase):
+    """Deploy/startup va ephemeral FS tufayli SOXTA 'heartbeat eskirgan'
+    alarmlar staff guruhiga yuborilmasligi kerak.
+
+    Repro: 15.08 07:15 hisobotida bot/UC '❌ heartbeat eskirgan' ko'rsatardi
+    — komponentlar o'lgani uchun emas, stats fayllari yangi konteynerda hali
+    yozilmagani/yo'qolgani uchun. Fiks: polling-lock (bot) va DB worker
+    heartbeat (UC) + konteyner grace davri — fayl tizimidan mustaqil signal.
+    """
+
+    def setUp(self):
+        Setting.clear_cache()
+
+    def _set_launcher_started(self, age_seconds):
+        started = timezone.now() - timedelta(seconds=age_seconds)
+        Setting.set_setting('cloud_launcher_started_at', started.isoformat())
+
+    # ── Bot ──
+    def test_bot_no_stats_fresh_lock_is_ok(self):
+        # Stats fayli YO'Q, lekin polling-lock yangi (har 15s yangilanadi)
+        # → bot TIRIK, ❌ emas (ephemeral FS'da stats yo'qolgan holat).
+        Setting.set_setting('bot_polling_lock', f'{time.time():.3f}')
+        res = system_health.check_bot()
+        self.assertEqual(res['status'], 'ok')
+        self.assertIn('lock', res['detail'])
+
+    def test_bot_no_stats_startup_grace_is_ok(self):
+        # Stats fayli yo'q + lock eskirgan/yok, konteyner hali yosh
+        # → 'ishga tushmoqda…' (deploy paytidagi soxta alarm yo'qoladi).
+        self._set_launcher_started(30)
+        res = system_health.check_bot()
+        self.assertEqual(res['status'], 'ok')
+        self.assertIn('ishga tushmoqda', res['detail'])
+
+    def test_bot_stale_stats_fresh_lock_is_ok(self):
+        # Stats fayli eski (yozilmay qolgan) lekin lock yangi → tirik.
+        Setting.set_setting('bot_polling_lock', f'{time.time() - 10:.3f}')
+        with mock.patch.object(system_health, '_read_json', return_value={
+                'last_heartbeat': '2020-01-01T00:00:00+00:00'}):
+            res = system_health.check_bot()
+        self.assertEqual(res['status'], 'ok')
+
+    def test_bot_stale_stats_no_lock_outside_grace_is_down(self):
+        # Haqiqiy down hali ham ko'rsatiladi (asl muammo yashirilmaydi):
+        # eskirgan stats + eskirgan lock + konteyner qari.
+        Setting.set_setting('bot_polling_lock', f'{time.time() - 600:.3f}')
+        self._set_launcher_started(30 * 60)
+        with mock.patch.object(system_health, '_read_json', return_value={
+                'last_heartbeat': '2020-01-01T00:00:00+00:00'}):
+            res = system_health.check_bot()
+        self.assertEqual(res['status'], 'down')
+
+    # ── User Client ──
+    def test_uc_no_stats_fresh_db_heartbeat_is_ok(self):
+        # Stats fayli YO'Q, slot-1 workeri Neon'ga yangi heartbeat yozgan
+        # → ONLINE (ephemeral FS'da fayl yo'qolgan holatda soxta ❌ yo'q).
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'ok')
+        self.assertIn('db heartbeat', res['detail'])
+
+    def test_uc_stale_stats_fresh_db_heartbeat_is_ok(self):
+        # Fayldagi heartbeat eskirgan, DB yangi → DB g'alaba qiladi (tirik).
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        with mock.patch.object(system_health, '_read_json', return_value={
+                'last_heartbeat': '2020-01-01T00:00:00+00:00'}):
+            res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'ok')
+
+    def test_uc_no_stats_startup_grace_is_ok(self):
+        # Grace davrida UC hali boshlanayotgan bo'ladi — ❌ emas.
+        Setting.set_setting('user_client_session_b64', 'c2Vzc2lh')
+        self._set_launcher_started(30)
+        res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'ok')
+        self.assertIn('ishga tushmoqda', res['detail'])
+
+    def test_uc_stale_everything_still_reported_down(self):
+        # Hech qanday yangi signal yo'q + sessiya bor → HAQIQIY muammo,
+        # ko'rsatiladi (grace tashqarisida).
+        self._set_launcher_started(30 * 60)
+        res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'down')
+
+    # ── Periodic report (build_health_report) — worker heartbeat fallback ──
+    def test_periodic_report_uc_worker_fresh_shows_online(self):
+        from apps.cardpay import services
+        self._set_launcher_started(30 * 60)  # grace tashqarisida
+        Setting.set_setting('user_client_session_b64', 'c2Vzc2lh')
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        report = services.build_health_report()
+        uc_lines = [l for l in report.splitlines() if 'User Client' in l]
+        self.assertTrue(uc_lines)
+        self.assertNotIn('❌', uc_lines[0])

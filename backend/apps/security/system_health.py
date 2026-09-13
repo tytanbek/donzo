@@ -179,17 +179,116 @@ def _ts_to_epoch(ts) -> float:
         return 0.0
 
 
+def _container_started_recently(grace_seconds: int = 720) -> bool:
+    """True if the cloud container started within the last grace_seconds.
+
+    Deply/startup paytida bot va user client hali stats fayllarini yozmagan
+    bo'ladi (bot polling-lock'ni kutadi, UC Telethon'ga ulanadi) — bu davrda
+    'down' deb ko'rsatish SOXTA signal. cloud_launcher boshlangan vaqtni
+    DB'ga yozadi (Setting 'cloud_launcher_started_at'). Lokal dev'da bu kalit
+    bo'lmasligi mumkin — False (oddiy tekshiruv qo'llanadi).
+    """
+    try:
+        from apps.settings_app.models import Setting
+        raw = Setting.get_setting('cloud_launcher_started_at', '')
+        if not raw:
+            return False
+        started = datetime.fromisoformat(str(raw))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return (timezone.now() - started).total_seconds() < grace_seconds
+    except Exception:
+        return False
+
+
+def _bot_lock_fresh(max_age_seconds: float = 90) -> bool:
+    """Fayl tizimidan mustaqil bot-alomat: bot_polling_lock yoshi.
+
+    Lock qiymati '<owner>:<unix_ts>' (eski format: faqat ts) va bot uni har
+    15s yangilaydi. Stats fayli Render'da yo'qolsa ham DB yozuvi qoladi —
+    yangi bo'lsa bot TIRIK. Hech qachon exception tashlamaydi.
+    """
+    try:
+        from apps.settings_app.models import Setting
+        val = str(Setting.get_setting('bot_polling_lock', '') or '')
+        if not val:
+            return False
+        ts_raw = val.split(':', 1)[1] if ':' in val else val
+        return (time.time() - float(ts_raw)) < max_age_seconds
+    except Exception:
+        return False
+
+
 def check_bot() -> dict:
     stats = _read_json(BOT_STATS)
-    if not stats:
-        return {'name': 'Bot', 'port': '-', 'status': 'down', 'detail': 'statistika yo\'q'}
-    ts = stats.get('last_heartbeat') or stats.get('started_at') or 0
-    age_s = time.time() - _ts_to_epoch(ts)
-    ok = age_s < 180  # 3 daqiqa ichida heartbeat bo'lsa jonli
-    token_status = stats.get('token_status')
-    token_txt = 'token OK' if token_status else 'token xato!'
-    return {'name': 'Bot', 'port': '-', 'status': 'ok' if ok else 'down',
-            'detail': f'heartbeat {int(age_s)}s avval · {token_txt}'}
+    if stats:
+        ts = stats.get('last_heartbeat') or stats.get('started_at') or 0
+        age_s = time.time() - _ts_to_epoch(ts)
+        ok = age_s < 180  # 3 daqiqa ichida heartbeat bo'lsa jonli
+        token_status = stats.get('token_status')
+        token_txt = 'token OK' if token_status else 'token xato!'
+        if ok:
+            return {'name': 'Bot', 'port': '-', 'status': 'ok',
+                    'detail': f'heartbeat {int(age_s)}s avval · {token_txt}'}
+        # Stats fayli bor, lekin eskirgan: cloud'da fayl konteyner boshlanganda
+        # qayta yoziladi — yangi konteynerda polling-lock YANGI bo'lsa bot
+        # allaqachon tirik (fayl eski deploy'dan qolgan bo'lishi mumkin emas,
+        # lekin lock'ga ishonamiz — u har 15s yangilanadi).
+        if _bot_lock_fresh():
+            return {'name': 'Bot', 'port': '-', 'status': 'ok',
+                    'detail': 'ishlayapti (lock yangi)'}
+        if _container_started_recently():
+            return {'name': 'Bot', 'port': '-', 'status': 'ok',
+                    'detail': 'ishga tushmoqda…'}
+        return {'name': 'Bot', 'port': '-', 'status': 'down',
+                'detail': f'heartbeat eskirgan ({int(age_s)}s)'}
+    # Stats fayli YO'Q (yangi konteyner / ephemeral FS tozalangan):
+    # 1) polling-lock yangi bo'lsa bot TIRIK (u DB'ga har 15s yozadi).
+    if _bot_lock_fresh():
+        return {'name': 'Bot', 'port': '-', 'status': 'ok',
+                'detail': 'ishlayapti (lock yangi)'}
+    # 2) Konteyner hali yosh — bot stats faylini hali yozmagan bo'lishi mumkin
+    #    (polling-lock 10 daqiqagacha kutadi). Bu soxta ❌ bo'lmasligi kerak.
+    if _container_started_recently():
+        return {'name': 'Bot', 'port': '-', 'status': 'ok',
+                'detail': 'ishga tushmoqda…'}
+    return {'name': 'Bot', 'port': '-', 'status': 'down',
+            'detail': 'statistika yo\'q'}
+
+
+def _uc_db_heartbeat_fresh(max_age_seconds: int = 180) -> tuple:
+    """Neon DB'dagi user-client worker heartbeat'i yangi mi?
+
+    Slot 1 (legacy) workeri 'user_client_worker_heartbeat_at' Setting kalitiga,
+    slot >= 2 workerlari UserClientAccount.last_heartbeat maydoniga yozadi
+    (har 30s). Returns (fresh: bool, age_seconds: int|None).
+    Fayl tizimidan mustaqil — Render ephemeral FS'da ham ishonchli.
+    """
+    best_age = None
+    try:
+        from apps.settings_app.models import Setting
+        raw = str(Setting.get_setting('user_client_worker_heartbeat_at', '') or '')
+        if raw:
+            dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            best_age = (timezone.now() - dt).total_seconds()
+    except Exception:
+        pass
+    try:
+        from apps.cardpay.models import UserClientAccount
+        row = UserClientAccount.objects.filter(
+            enabled=True, authorized=True,
+        ).order_by('-last_heartbeat').first()
+        if row and row.last_heartbeat:
+            age = (timezone.now() - row.last_heartbeat).total_seconds()
+            if best_age is None or age < best_age:
+                best_age = age
+    except Exception:
+        pass
+    if best_age is None:
+        return False, None
+    return best_age < max_age_seconds, int(best_age)
 
 
 def check_user_client() -> dict:
@@ -200,14 +299,38 @@ def check_user_client() -> dict:
         ts = stats.get('last_heartbeat') or stats.get('started_at') or 0
         age_s = time.time() - _ts_to_epoch(ts)
         ok = age_s < 180
-        detail = f'heartbeat {int(age_s)}s avval' if ok else 'heartbeat eskirgan'
-        return {'name': 'User Client', 'port': '-', 'status': 'ok' if ok else 'down',
-                'detail': detail}
+        if ok:
+            detail = f'heartbeat {int(age_s)}s avval'
+            return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                    'detail': detail}
+        # Stats fayli bor-u eskirgan — DB'dan mustaqil ikkinchi fikr so'raymiz
+        # (slot-1 workeri Neon'ga 'user_client_worker_heartbeat_at' yozadi,
+        # slot>=2 esa UserClientAccount.last_heartbeat'ga — har 30s).
+        fresh, _age = _uc_db_heartbeat_fresh()
+        if fresh:
+            return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                    'detail': 'ONLINE (db heartbeat)'}
+        if _container_started_recently():
+            return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                    'detail': 'ishga tushmoqda…'}
+        return {'name': 'User Client', 'port': '-', 'status': 'down',
+                'detail': f'heartbeat eskirgan ({int(age_s)}s)'}
     # CLOUD: stats fayli bo'lmasa (fresh container) — Neon DB'dagi sessiya
     # va login holatiga qaraymiz. Sessiya bor + login kutilmayotgan bo'lsa
     # worker qayta boshlanishi mumkin; sessiya yo'q yoki login_pending
     # bo'lsa — qayta kirish kerakligini aniq ko'rsatamiz.
     if IS_CLOUD:
+        # 1) Worker heartbeat DB'da yangi bo'lsa — worker TIRIK, stats fayli
+        #    shunchaki ephemeral FS'da yo'qolgan yoki hali yozilmagan.
+        fresh, _age = _uc_db_heartbeat_fresh()
+        if fresh:
+            return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                    'detail': 'ONLINE (db heartbeat)'}
+        # 2) Konteyner hali yosh — worker stats faylini hali yozmagan bo'lishi
+        #    mumkin. Soxta 'o'lik' signali o'rniga 'ishga tushmoqda…'.
+        if _container_started_recently():
+            return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                    'detail': 'ishga tushmoqda…'}
         try:
             from apps.settings_app.models import Setting
             b64 = Setting.get_setting('user_client_session_b64', '') or ''
@@ -220,7 +343,7 @@ def check_user_client() -> dict:
                 return {'name': 'User Client', 'port': '-', 'status': 'down',
                         'detail': 'login jarayonda — kod kiritilishini kutyapti'}
             # Sessiya bor, lekin worker heartbeat'i yo'q — bloklangan yoki
-            # worker hali ishga tushmagan bo'lishi mumkin.
+            # worker ishlamayapti. Bu HAQIQIY muammo — ko'rsatamiz.
             return {'name': 'User Client', 'port': '-', 'status': 'down',
                     'detail': 'sessiya bor, worker heartbeat yo\'q (bloklangan bo\'lishi mumkin)'}
         except Exception:

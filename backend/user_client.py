@@ -223,6 +223,17 @@ def _stats_started(account: dict):
 def _stats_heartbeat():
     if _is_legacy_slot():
         user_client_stats.heartbeat()
+        # Slot 1 heartbeat'ini Neon DB'ga ham yozamiz — Render ephemeral
+        # FS'da lokal stats fayli yo'qoladi va health report slot-1 clientni
+        # ishlamayotgan deb noto'g'ri ko'rsatardi ('heartbeat eskirgan').
+        # DB'dagi yozuv fayl tizimidan mustaqil ishonchli signal.
+        try:
+            from django.utils import timezone
+            from apps.settings_app.models import Setting
+            Setting.set_setting('user_client_worker_heartbeat_at',
+                                timezone.now().isoformat())
+        except Exception:
+            pass
         return
     try:
         from django.utils import timezone

@@ -848,6 +848,26 @@ def _container_started_recently(grace_seconds: int = 12 * 60) -> bool:
         return False
 
 
+def _uc_worker_fresh(max_age_seconds: int = 180) -> bool:
+    """Slot-1 user-client workeri Neon'ga yozgan heartbeat yangi mi?
+
+    Slot 1 stats faylini LOKAL yozadi (Render'da ephemeral FS'da yo'qoladi);
+    _stats_heartbeat esa endi 'user_client_worker_heartbeat_at' kalitiga ham
+    yozadi. DB yozuvi fayl tizimidan mustaqil — ishonchli tiriklik alomati.
+    """
+    from datetime import datetime, timezone as _utc
+    try:
+        raw = Setting.get_setting('user_client_worker_heartbeat_at', '')
+        if not raw:
+            return False
+        dt = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_utc.utc)
+        return (datetime.now(_utc.utc) - dt).total_seconds() < max_age_seconds
+    except Exception:
+        return False
+
+
 def build_health_report() -> str:
     """Periodic system health report for the report group (every 15 min).
 
@@ -1002,12 +1022,18 @@ def build_health_report() -> str:
                 _uc_db = UserClientAccount.objects.filter(
                     enabled=True, authorized=True,
                 ).order_by('-last_heartbeat').first()
-                if _uc_db and _uc_db.last_heartbeat:
-                    _db_age = (timezone.now() - _uc_db.last_heartbeat).total_seconds()
-                    if _db_age < 180:
-                        _check('User Client', True, 'ONLINE')
-                    else:
-                        _check('User Client', False, f'heartbeat eskirgan ({int(_db_age)}s)')
+                _db_age = (
+                    (timezone.now() - _uc_db.last_heartbeat).total_seconds()
+                    if _uc_db and _uc_db.last_heartbeat else None
+                )
+                # Slot-1 workeri Neon'ga 'user_client_worker_heartbeat_at'
+                # yozadi (har 30s) — fayl tizimidan mustaqil tiriklik alomati.
+                # Eng YAXSHI signal g'alaba qiladi: biror manba yangi bo'lsa
+                # worker tirik (masalan slot-2 qatori eski, slot-1 tirik).
+                if (_db_age is not None and _db_age < 180) or _uc_worker_fresh():
+                    _check('User Client', True, 'ONLINE')
+                elif _db_age is not None:
+                    _check('User Client', False, f'heartbeat eskirgan ({int(_db_age)}s)')
                 else:
                     _check('User Client', False, uc_detail)
         except Exception:
