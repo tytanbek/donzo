@@ -1053,8 +1053,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_staff(update):
         return
     from apps.security.system_health import format_health_report
-    msg = await sync_to_async(format_health_report)()
-    await update.effective_message.reply_html(msg)
+    from apps.security.self_healing import get_system_status
+    health_msg = await sync_to_async(format_health_report)()
+    healing_msg = await sync_to_async(get_system_status)()
+    combined = health_msg + '\n\n' + healing_msg
+    await update.effective_message.reply_html(combined)
 
 
 async def xato_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1171,6 +1174,24 @@ async def togrila_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_html(
                 f"⚠️ AI kod tuzatishda xato: {type(exc).__name__}: {str(exc)[:150]}"
             )
+
+    # Self-healing cycle — to'liq diagnostika + tuzatish + deploy + verify
+    await update.effective_message.reply_html(
+        "🤖 <b>Self-Healing Engine</b>\n\n"
+        "To'liq sikl: diagnostika → tahlil → tuzatish → test → deploy → tekshirish..."
+    )
+    from apps.security.self_healing import run_self_healing_cycle
+    heal_result = await sync_to_async(run_self_healing_cycle)()
+    if heal_result['cycle_result'] == 'all_healthy':
+        await update.effective_message.reply_html(
+            "✅ <b>Self-Healing:</b> Barcha komponentlar sog'lom."
+        )
+    else:
+        actions = heal_result.get('actions', [])
+        lines = [f"🤖 <b>Self-Healing natijasi:</b> {heal_result['cycle_result']}\n"]
+        for a in actions:
+            lines.append(f"  • <b>{a['component']}</b>: {a['action']} — {a.get('detail', '')}")
+        await update.effective_message.reply_html('\n'.join(lines))
 
 
 async def qaytar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

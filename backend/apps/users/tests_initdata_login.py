@@ -35,10 +35,13 @@ def _make_initdata(token: str, user_payload: dict, extra: dict | None = None) ->
     So'nggi initData string: har qiymat URL-encode qilinib & bilan birlashadi.
     """
     import json as _json
+    import time as _time
     user_json = _json.dumps(user_payload, separators=(',', ':'))
+    # auth_date: default — hoziroq (fresh); maxsus qiymat extra['auth_date'] orqali
+    fresh_auth_date = str(int(_time.time()))
     raw = {
         'user': user_json,
-        'auth_date': str(extra.get('auth_date', '1700000000')) if extra else '1700000000',
+        'auth_date': str(extra.get('auth_date', fresh_auth_date)) if extra else fresh_auth_date,
         'query_id': str(extra.get('query_id', 'AAF-test-query')) if extra else 'AAF-test-query',
     }
     if extra and extra.get('hash_value') is not None:
@@ -118,6 +121,26 @@ class InitDataLoginTests(TestCase):
     def test_no_user_payload_rejected(self):
         # user id bo'sh — kirish rad etiladi (foydalanuvchi ma'lumoti yo'q)
         init_data = _make_initdata(BOT_TOKEN, {'id': '', 'first_name': ''})
+        resp = self.client.post(self.url, {'init_data': init_data}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    # ── auth_date freshness: replay attack himoyasi ──
+
+    def test_stale_auth_date_rejected(self):
+        """24 soatdan eski initData (replay attack) rad etilishi kerak."""
+        import time as _time
+        stale_date = str(int(_time.time()) - 86500)  # 24 soat + 100s oldin
+        init_data = _make_initdata(BOT_TOKEN, {'id': 999001, 'first_name': 'Stale'},
+                                    {'auth_date': stale_date})
+        resp = self.client.post(self.url, {'init_data': init_data}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_future_auth_date_rejected(self):
+        """Kelajakdagi auth_date (soat farqi yoki soxta) rad etilishi kerak."""
+        import time as _time
+        future_date = str(int(_time.time()) + 300)  # 5 daqiqa kelajakda
+        init_data = _make_initdata(BOT_TOKEN, {'id': 999002, 'first_name': 'Future'},
+                                    {'auth_date': future_date})
         resp = self.client.post(self.url, {'init_data': init_data}, format='json')
         self.assertEqual(resp.status_code, 403)
 

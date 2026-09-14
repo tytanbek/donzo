@@ -151,11 +151,12 @@ class LoginMetaTests(TestCase):
         import hashlib
         import hmac
         import json as _json
+        import time as _time
         import urllib.parse
         user_json = _json.dumps(user_payload, separators=(',', ':'))
         raw = {
             'user': user_json,
-            'auth_date': '1700000000',
+            'auth_date': str(int(_time.time())),  # fresh auth_date
             'query_id': 'AAF-test-query',
         }
         check_string = '\n'.join(f'{k}={v}' for k, v in sorted(raw.items()))

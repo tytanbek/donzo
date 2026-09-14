@@ -902,6 +902,24 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
         )
         return None
 
+    # ── auth_date freshness: 24 soatdan eski initData rad etiladi ──
+    # Replay attack himoyasi:Telegram documentation recommends rejecting
+    # initData older than 24 hours. A leaked/stolen initData string could
+    # be replayed indefinitely without this check.
+    auth_date_raw = params.get('auth_date', '')
+    if auth_date_raw:
+        try:
+            auth_age = int(_time.time()) - int(auth_date_raw)
+            if auth_age > 86400:  # 24 hours
+                logger.warning('[InitData] auth_date eskirgan: %d soniya (limit 86400)', auth_age)
+                return None
+            if auth_age < -60:  # 1 daqiqa kelajakda — soat farqi yoki soxta
+                logger.warning('[InitData] auth_date kelajakda: %d soniya', auth_age)
+                return None
+        except (ValueError, TypeError):
+            logger.warning('[InitData] auth_date noto\'g\'ri format: %s', auth_date_raw)
+            return None
+
     return params
 
 
