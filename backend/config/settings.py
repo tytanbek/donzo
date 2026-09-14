@@ -122,6 +122,7 @@ INSTALLED_APPS = [
     'apps.promocodes',
     'apps.cardpay',
     'apps.security',
+    'apps.birthday',
     'channels',
     'apps.ws',
 ]
