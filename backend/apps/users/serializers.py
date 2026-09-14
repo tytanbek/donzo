@@ -2,19 +2,16 @@ from rest_framework import serializers
 from .models import User
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
+class UserSerializer(serializers.ModelSerializer):    class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'phone', 'first_name', 'last_name',
             'telegram_id', 'telegram_username', 'language_code', 'avatar_url',
-            'is_telegram_premium', 'fragment_synced_at',
-            'role', 'is_active', 'balance', 'cashback_balance',
-            'referral_code', 'referred_by', 'created_at', 'updated_at',
+            'is_telegram_premium', 'fragment_synced_at', 'role', 'is_active', 'balance', 'cashback_balance', 'referral_code', 'referred_by', 'created_at', 'updated_at',
+            'birthday_date', 'birthday_year_hidden', 'birthday_timezone',
         ]
         read_only_fields = [
-            'id', 'role', 'balance', 'cashback_balance', 'referral_code',
-            'created_at', 'updated_at',
+            'id', 'role', 'balance', 'cashback_balance', 'referral_code', 'created_at', 'updated_at',
         ]
 
 

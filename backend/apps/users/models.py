@@ -47,6 +47,11 @@ class User(AbstractUser):
         null=True, blank=True, related_name='referrals'
     )
 
+    # ── Birthday System ──
+    birthday_date = models.DateField(null=True, blank=True, help_text='Tugilgan kun (DD-MM format)')
+    birthday_year_hidden = models.BooleanField(default=False, help_text='Tugilgan yilni yashirish')
+    birthday_timezone = models.CharField(max_length=60, blank=True, default='Asia/Tashkent')
+
     is_blacklisted = models.BooleanField(default=False)
     notes = models.TextField(blank=True, null=True)
 

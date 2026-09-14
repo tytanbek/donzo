@@ -367,6 +367,13 @@ export const referralAPI = {
   adminCreateCode: (username: string) => api.post('/admin/referrals/create-code/', { username }),
 };
 
+// Birthday
+export const birthdayAPI = {
+  profile: () => api.get('/birthday/profile/'),
+  updateProfile: (data: any) => api.put('/birthday/profile/', data),
+  status: () => api.get('/birthday/status/'),
+};
+
 // Order Stats
 export const orderStatsAPI = {
   get: () => api.get('/orders/stats/'),

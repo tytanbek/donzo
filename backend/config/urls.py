@@ -48,6 +48,9 @@ api_v1_patterns = [
     path('admin/', include('apps.cardpay.urls')),
     # Security / anti-fraud center
     path('admin/', include('apps.security.urls')),
+    # Birthday System
+    path('', include('apps.birthday.urls')),
+    path('admin/', include('apps.birthday.admin_urls')),
     # WebSocket metrics
     path('admin/', include('apps.ws.urls')),
 ]

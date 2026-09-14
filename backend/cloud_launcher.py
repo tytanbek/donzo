@@ -291,6 +291,29 @@ def _health_report_loop():
             return
 
 
+def _birthday_check_loop():
+    """Har kuni 00:05 da birthday check — tabriklar + 10% reward."""
+    import os as _os
+    _os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+    while not _stop.is_set():
+        now = dt.datetime.utcnow()
+        target = now.replace(hour=0, minute=5, second=0, microsecond=0)
+        if target <= now:
+            target += dt.timedelta(days=1)
+        secs = (target - now).total_seconds()
+        _log('BIRTHDAY', f'keyingi tekshiruv: {target.isoformat()}Z ({int(secs)}s dan keyin)')
+        if _stop.wait(secs):
+            return
+        try:
+            import django
+            django.setup()
+            from apps.birthday.views import check_and_send_birthday_messages
+            result = check_and_send_birthday_messages()
+            _log('BIRTHDAY', f'natija: {result}')
+        except Exception as exc:
+            _log('BIRTHDAY', f'xato: {type(exc).__name__}: {str(exc)[:120]}')
+
+
 def _self_healing_loop():
     """Self-healing engine — avtomatik diagnostika + tuzatish."""
     time.sleep(60)  # daphne/DB tayyor bo'lishini kutamiz
@@ -356,6 +379,7 @@ def main():
     threads.append(threading.Thread(
         target=_userclient_reconciler, args=(_supervised_slots,), daemon=True))
     threads.append(threading.Thread(target=_self_healing_loop, daemon=True))
+    threads.append(threading.Thread(target=_birthday_check_loop, daemon=True))
     for t in threads:
         t.start()
 

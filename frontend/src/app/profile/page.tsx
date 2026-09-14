@@ -9,6 +9,7 @@ import { useStore } from '@/lib/store';
 import { authAPI, orderStatsAPI } from '@/lib/api';
 import ProfileStats from '@/components/ProfileStats';
 import ReferralSection from '@/components/ReferralSection';
+import BirthdaySection from '@/components/BirthdaySection';
 import toast from 'react-hot-toast';
 
 export default function ProfilePage() {
@@ -236,6 +237,9 @@ export default function ProfilePage() {
               <span className="text-sm font-medium gradient-text">To'ldirish</span>
             </Link>
           </div>
+
+          {/* ═══ Birthday Section ═══ */}
+          <BirthdaySection />
 
           {/* ═══ Referral Section (card, taklif qilganlar, daromad, ishlatish) ═══ */}
           <ReferralSection user={user} copyReferral={copyReferral} />
