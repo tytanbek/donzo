@@ -909,7 +909,7 @@ def _verify_initdata(init_data_raw: str, bot_token: str) -> dict | None:
     auth_date_raw = params.get('auth_date', '')
     if auth_date_raw:
         try:
-            auth_age = int(_time.time()) - int(auth_date_raw)
+            auth_age = int(time.time()) - int(auth_date_raw)
             if auth_age > 86400:  # 24 hours
                 logger.warning('[InitData] auth_date eskirgan: %d soniya (limit 86400)', auth_age)
                 return None
