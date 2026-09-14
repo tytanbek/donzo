@@ -220,6 +220,39 @@ def _stats_started(account: dict):
         pass
 
 
+def _stats_startup_heartbeat():
+    """Startup'da birinchi heartbeat — Telegram ulanishidan oldin.
+
+    Agar worker startup paytida crash bo'lsa ham health report
+    "ishga tushmoqda…" ko'rsatishi uchun. Shuningdek, session xatosida
+    (rc=4/5, backoff=300s) davomida ham heartbeati yangilaydi.
+    """
+    try:
+        from django.utils import timezone as _tz
+        _now = _tz.now()
+        # Har qanday slot uchun: UserClientAccount.last_heartbeat
+        from apps.cardpay.models import UserClientAccount
+        UserClientAccount.objects.filter(slot=SLOT).update(
+            last_heartbeat=_now, last_error='', last_error_at=None)
+    except Exception:
+        pass
+    # Setting kalit — barcha slotlar uchun (zaxira signal)
+    try:
+        from apps.settings_app.models import Setting
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            _tz.now().isoformat())
+    except Exception:
+        pass
+    # Startup timestamp — grace period uchun
+    try:
+        from apps.settings_app.models import Setting
+        Setting.set_setting('user_client_worker_started_at',
+                            _tz.now().isoformat())
+    except Exception:
+        pass
+    _log('Startup heartbeat yozildi (DB)')
+
+
 def _stats_heartbeat():
     """Har 30s heartbeat — lokal fayl + DB (Render ephemeral FS'dan mustaqil)."""
     # 1) Lokal stats fayli (admin panel uchun)
@@ -273,6 +306,11 @@ def _stats_error(msg: str):
 
 async def main():
     from apps.cardpay import services as cardpay_services
+
+    # STARTUP HEARTBEAT: Telegram ulanishidan oldin DB'ga yozamiz —
+    # agar worker startup paytida crash bo'lsa ham health report
+    # "ishga tushmoqda…" ko'rsatishi uchun ("heartbeat eskirgan" emas).
+    await sync_to_async(_stats_startup_heartbeat)()
 
     # DB read in async context → must go through sync_to_async
     api_id, api_hash = await sync_to_async(_get_credentials)()

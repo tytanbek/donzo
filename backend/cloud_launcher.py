@@ -61,13 +61,11 @@ def _session_bootstrap():
             return
     if not b64:
         _log('SESSION', "sessiya topilmadi (env ham, DB ham bo'sh) — eski fayl o'chiriladi")
-        # Neon'da sessiya yo'q — kontenerdagi eski (bloklangan) faylni o'chiramiz,
-        # aks holda worker eski bloklangan sessiyani ishlatib qayta-ketadi.
         try:
             stale = os.path.join(BASE_DIR, 'sessions', 'donzo_user.session')
             if os.path.exists(stale):
                 os.remove(stale)
-                _log('SESSION', 'eski sessiya fayli o\'chirildi')
+                _log('SESSION', "eski sessiya fayli o'chirildi")
         except Exception:
             pass
         return
@@ -116,17 +114,12 @@ def _supervise(name, cmd):
     """Jarayonni backoff bilan abadiy nazorat qiladi."""
     backoff = 5
     is_userclient = name.upper().startswith('USERCLIENT')
-    # Slot 1 (legacy USERCLIENT) → .restart_requested; extra slots
-    # (USERCLIENT2, USERCLIENT3, …) → .restart_requested_<slot>.
     _slot_suffix = name.upper().replace('USERCLIENT', '') or '1'
     restart_flag = os.path.join(
         BASE_DIR, 'sessions',
         '.restart_requested' if _slot_suffix == '1' else f'.restart_requested_{_slot_suffix}',
     )
     while not _stop.is_set():
-        # Self-heal: legacy USERCLIENT re-pulls its session from Neon before
-        # every start. Extra slots pull their own session from the
-        # UserClientAccount row inside user_client.py, so no bootstrap here.
         if is_userclient and _slot_suffix == '1':
             try:
                 _session_bootstrap()
@@ -148,18 +141,22 @@ def _supervise(name, cmd):
             _log(name, f"chiqdi (rc=0) — {backoff}s keyin qayta ishga tushadi")
         else:
             _log(name, f"YIQILDI (rc={rc}) — {backoff}s keyin qayta ishga tushadi")
-        # rc=5 (user_client): sessiya bloklangan — qayta kirish kerak, tez-tez
-        # urinish ma'nosiz. 5 daqiqada bir marta urinamiz.
-        # rc=4 (EXIT_NOT_AUTHORIZED): sessiya noto'g'ri/bloklangan — ham faqat
-        # qayta kirish bilan hal bo'ladi, 5 daqiqada bir marta urinamiz.
         if rc in (4, 5) and is_userclient:
             backoff = 300
-        # Admin panel orqali qayta kirish tugallanganda _restart_worker()
-        # shu flag faylni yaratadi — backoff'ni kutmasdan darhol qayta
-        # ishga tushirish uchun (qolgan 5 daqiqani kutmaymiz).
         if is_userclient:
             waited = 0
             while not _stop.is_set() and waited < backoff:
+                # Backoff davomida heartbeat yozamiz — health report
+                # "heartbeat eskirgan" emas, "restart kutilmoqda" ko'rsatsin.
+                try:
+                    import django as _hb_dj
+                    _hb_dj.setup()
+                    from apps.settings_app.models import Setting
+                    import datetime as _hb_dt
+                    Setting.set_setting('user_client_worker_heartbeat_at',
+                                        _hb_dt.datetime.now(_hb_dt.timezone.utc).isoformat())
+                except Exception:
+                    pass
                 if os.path.exists(restart_flag):
                     try:
                         os.remove(restart_flag)
@@ -180,10 +177,7 @@ def _userclient_reconciler(supervised_slots: set):
     """Pick up UserClientAccount rows added AFTER startup (no redeploy needed).
 
     Every 90s: any enabled slot we are not already supervising gets its own
-    supervise thread. Disabled/removed rows are handled by set_enabled /
-    delete_account killing the worker — the supervisor then idles on its
-    backoff (the process just keeps exiting NOT_AUTHORIZED cheaply). A full
-    cleanup happens on the next deploy.
+    supervise thread.
     """
     import django as _dj
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
@@ -223,11 +217,7 @@ def _pinger():
 
 
 def _direct_db_url():
-    """Neon pooler URL'ini direct URL'ga aylantiradi.
-
-    PgBouncer (pooler) migratsiya/DDL da osilib qoladi — direct ulanish
-    tez va ishonchli. Faqat migratsiya jarayoni uchun ishlatiladi.
-    """
+    """Neon pooler URL'ini direct URL'ga aylantiradi."""
     url = os.getenv('DATABASE_URL', '')
     if '-pooler' in url:
         return url.replace('-pooler', '')
@@ -235,11 +225,7 @@ def _direct_db_url():
 
 
 def _run_migrations():
-    """Migratsiyani fon thread'da bajaradi — daphne'ni bloklamaydi.
-
-    Schema allaqachon Neon'da bor; bu faqat yangi kod deploy'larida
-    qo'shimcha migratsiyalarni qo'llash uchun (non-blocking).
-    """
+    """Migratsiyani fon thread'da bajaradi — daphne'ni bloklamaydi."""
     try:
         env = dict(os.environ)
         direct = _direct_db_url()
@@ -278,13 +264,7 @@ def _daily_audit():
 
 
 def _health_report_loop():
-    """Har 15 daqiqada tizim holati hisobotini staff guruhiga yuboradi.
-
-    Avval user_client ichidagi status_report_loop bajarardi — lekin u faqat
-    muvaffaqiyatli login'dan keyin ishlardi; sessiya yo'q bo'lganda hisobot
-    ham yo'qolardi. Bu thread mustaqil: health_report_bot_token bilan
-    ishlaydi, user_client sessiyasiga bog'liq emas.
-    """
+    """Har 15 daqiqada tizim holati hisobotini staff guruhiga yuboradi."""
     import os as _os
     _os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     interval = int(_os.getenv('HEALTH_REPORT_INTERVAL', '900'))
@@ -299,8 +279,6 @@ def _health_report_loop():
         except Exception as exc:
             _log('HEALTH', f"holat hisoboti xatosi: {type(exc).__name__}: {str(exc)[:120]}")
         try:
-            # KUNLIK LIMIT RESET hisoboti — CARD_REPORT_HOUR (UTC) dan keyin
-            # kuniga bir marta staff guruhiga (marker takror yuborishni oldini oladi).
             if dt.datetime.utcnow().hour >= CARD_REPORT_HOUR:
                 import django
                 django.setup()
@@ -313,12 +291,27 @@ def _health_report_loop():
             return
 
 
+def _self_healing_loop():
+    """Self-healing engine — avtomatik diagnostika + tuzatish."""
+    time.sleep(60)  # daphne/DB tayyor bo'lishini kutamiz
+    while not _stop.is_set():
+        try:
+            import django as _hdj
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+            _hdj.setup()
+            from apps.security.self_healing import run_self_healing_cycle
+            result = run_self_healing_cycle()
+            if result.get('cycle_result') not in ('all_healthy', 'cooldown', None):
+                _log('HEAL', f"self-healing: {result['cycle_result']} actions={len(result.get('actions', []))}")
+        except Exception as exc:
+            _log('HEAL', f"self-healing xatosi: {type(exc).__name__}: {str(exc)[:120]}")
+        if _stop.wait(120):  # har 2 daqiqada
+            return
+
+
 def main():
     _log('MAIN', f"DONZO cloud launcher — port {PORT}")
     _session_bootstrap()
-    # Konteyner boshlangan vaqt — health report'ga: deploy/startup paytida
-    # komponentlar hali boshlanayotgan bo'ladi (polling-lock 10 daqiqagacha
-    # kutadi), bu davrda noto'g'ri 'o'lik' signali chiqmasligi uchun.
     try:
         import django
         django.setup()
@@ -336,10 +329,6 @@ def main():
         ('USERCLIENT', [sys.executable, 'user_client.py']),
     ]
 
-    # Extra Telethon monitor accounts (UserClientAccount, slot >= 2). They
-    # watch the SAME chat for redundancy; the unique (chat_id, message_id)
-    # guard means only the first to see a message credits it. Wrapped in a
-    # broad try/except so a DB hiccup can never stop DAPHNE/BOT from starting.
     try:
         import django as _dj
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
@@ -366,6 +355,7 @@ def main():
     threads.append(threading.Thread(target=_run_migrations, daemon=True))
     threads.append(threading.Thread(
         target=_userclient_reconciler, args=(_supervised_slots,), daemon=True))
+    threads.append(threading.Thread(target=_self_healing_loop, daemon=True))
     for t in threads:
         t.start()
 

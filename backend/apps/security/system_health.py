@@ -336,6 +336,21 @@ def check_user_client() -> dict:
             from apps.settings_app.models import Setting
             b64 = Setting.get_setting('user_client_session_b64', '') or ''
             pending = bool(Setting.get_setting('user_client_login_phone', '') or '')
+            # Worker startup'da 'user_client_worker_started_at' yozadi —
+            # bu kalit yangi bo'lsa worker ishga tushmoqda (yoki restart)
+            # va heartbeat hali yozilmagan. False alarm emas.
+            started_at = Setting.get_setting('user_client_worker_started_at', '') or ''
+            if started_at:
+                try:
+                    st_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    if st_dt.tzinfo is None:
+                        st_dt = st_dt.replace(tzinfo=timezone.utc)
+                    st_age = (timezone.now() - st_dt).total_seconds()
+                    if st_age < 300:  # 5 daqiqa ichida start bo'lgan
+                        return {'name': 'User Client', 'port': '-', 'status': 'ok',
+                                'detail': f'ishga tushmoqda… ({int(st_age)}s avval start)'}
+                except Exception:
+                    pass
             detail = 'sessiya Neon DB\'da'
             if not b64:
                 return {'name': 'User Client', 'port': '-', 'status': 'down',
