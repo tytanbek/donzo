@@ -138,10 +138,14 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Maintenance mode gate — 503 for the public API while enabled
     'apps.settings_app.middleware.MaintenanceModeMiddleware',
+    # Security headers — strip server info, add hardening headers
+    'apps.security.security_headers.SecurityHeadersMiddleware',
+    # Brute-force protection — tracks failed login attempts per IP
+    'apps.security.bruteforce.BruteForceProtectionMiddleware',
 ]
 
-# ── Cache: in-process LLOC memcache for public catalogue endpoints.
-# Avoids DB round-trips on every page load (services, categories, banners).
+# ── Cache: in-process LocMemCache for public catalogue endpoints.
+# Rate limiting uses per-process state (acceptable for single-worker Render free tier).
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -297,11 +301,11 @@ REST_FRAMEWORK = {
         'user': '10000/hour',
         # Scoped rate limits (applied on specific views via ScopedRateThrottle)
         'fragment_login': '20/min',  # Fragment login (username bo'yicha brute-force guard)
-        'telegram_auth': '20/min',   # Telegram login/WebApp auth (brute-force guard)
+        'telegram_auth': '10/min',   # Telegram login/WebApp auth (brute-force guard — 10 per min)
         'telegram_code_login': '10/min',  # Bot one-time-code login (brute-force guard)
         'telegram_send_code': '10/min',   # Auto send-code (per Telegram user session)
         'login_code': '10/min',            # Bot orqali tasdiqlash kodi so'rash (brute-force guard)
-        'login_code_verify': '20/min',     # Kodni tekshirish (10 ta urinish/min yetarli)
+        'login_code_verify': '10/min',     # Kodni tekshirish (brute-force guard)
         'fragment_sync': '6/min',    # Web App ochilganda Fragment force-sync (API'ni spam qilmaydi)
         'payments': '10/min',        # Payment init / balance top-up
         'cardpay_status': '60/min',  # Card-payment status polling (frontend polls every 5s)
