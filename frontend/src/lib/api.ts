@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://donzo-backend-v8oz.onrender.com/api/v1';
 
 // Ishonchli zaxira backend — agar env'da pishirilgan URL o'lik bo'lsa (masalan
 // Vercel production hali eski trycloudflare tunnelga ishora qilsa), barcha

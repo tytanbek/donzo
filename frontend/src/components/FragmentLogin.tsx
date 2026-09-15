@@ -28,7 +28,7 @@ export default function FragmentLogin() {
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const attemptedRef = useRef(false);
-  const autoRetryRef = useRef(false);
+  const autoRetryCountRef = useRef(0);
 
   const goToPanel = (role: string) => {
     if (role === 'super_admin' || role === 'admin') router.push('/admin');
@@ -71,19 +71,20 @@ export default function FragmentLogin() {
       } else if (e?.response?.status === 403) {
         detail = detail || 'Telegram tasdiqlanmadi. Bot orqali WebApp\'ni qayta oching.';
       } else if (e?.response?.status >= 500) {
-        detail = 'Server xatosi. Biroz kutib qayta urinib ko\'ring.';
+        detail = 'Server isinish kutilmoqda. Avtomatik qayta urinish...';
       }
       if (!detail) detail = 'Avtomatik kirish amalga oshmadi. Qayta urinib ko\'ring.';
-      // Cold start yoki tarmoq xatosi bo'lsa — 3 soniyadan keyin avtomatik qayta urinish (1 marta)
+      // Cold start yoki tarmoq xatosi — 3x avtomatik qayta urinish (5s, 10s, 15s)
       const isTransient = e?.code === 'ECONNABORTED' || !e?.response || (e?.response?.status >= 500);
-      if (isTransient && !autoRetryRef.current) {
-        autoRetryRef.current = true;
+      if (isTransient && autoRetryCountRef.current < 3) {
+        autoRetryCountRef.current += 1;
         setState('checking');
         setError(null);
+        const delay = autoRetryCountRef.current * 5000; // 5s, 10s, 15s
         setTimeout(() => {
           const tg2 = (window as any).Telegram?.WebApp;
           if (tg2?.initData) tryAutoLogin(tg2.initData);
-        }, 3000);
+        }, delay);
         return;
       }
       setError(detail);
@@ -98,6 +99,7 @@ export default function FragmentLogin() {
   useEffect(() => {
     if (attemptedRef.current) return;
     attemptedRef.current = true;
+    autoRetryCountRef.current = 0;
 
     // If user explicitly logged out, don't auto-login — show bot link instead
     try {
@@ -129,6 +131,7 @@ export default function FragmentLogin() {
 
   const retry = () => {
     attemptedRef.current = false;
+    autoRetryCountRef.current = 0;
     setState('checking');
     setError(null);
     setRetryKey((k) => k + 1);
