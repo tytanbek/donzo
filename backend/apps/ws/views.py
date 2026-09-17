@@ -87,6 +87,34 @@ def health_check(request):
     return Response(payload, status=status_code)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def run_migrations(request):
+    """
+    POST /health/run-migrations/
+
+    Force-run Django migrations. Only works when DEBUG=True or
+    a secret token is provided.
+    """
+    import subprocess, sys, os
+    token = request.data.get('token', '')
+    if token != 'donzo-migrate-2026':
+        return Response({'error': 'unauthorized'}, status=403)
+    try:
+        result = subprocess.run(
+            [sys.executable, 'manage.py', 'migrate', '--noinput'],
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+        return Response({
+            'stdout': result.stdout[-2000:],
+            'stderr': result.stderr[-2000:],
+            'returncode': result.returncode,
+        })
+    except Exception as exc:
+        return Response({'error': str(exc)}, status=500)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def ws_metrics(request):
