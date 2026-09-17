@@ -29,6 +29,8 @@ import threading
 import time
 import urllib.request
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # ── Ensure DB migrations are applied before starting any services ──
 def _ensure_migrations():
     """Run migrate --noinput with retry (Neon DB wake-up may need time)."""
@@ -52,8 +54,6 @@ def _ensure_migrations():
     return False
 
 _ensure_migrations()
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = os.getenv('PORT', '8000')
 PING_URL = (os.getenv('RENDER_EXTERNAL_URL') or 'https://donzo-backend-v8oz.onrender.com').rstrip('/')
 PING_INTERVAL = int(os.getenv('PING_INTERVAL', '60'))  # 1 daqiqa — Render free tier 15 daqiqada o'chirmaydi
