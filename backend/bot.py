@@ -26,6 +26,7 @@ import os
 import random
 import re
 import sys
+import signal
 import threading
 import time
 from decimal import Decimal
@@ -2273,77 +2274,29 @@ def main():
     threading.Thread(target=_creative_ad_loop, daemon=True).start()
     print("[BOT] Creative reklama loopi: har 3 soatda sirli shaxs reklamasi")
 
-    # ── MANUAL POLLING (409 xavfsizligi bilan) ──
-    # run_polling() 409 xatosini ichki retry bilan hal qiladi, lekin
-    #Render deploy'da eski konteyner to'xtashini kutmaydi.
-    # Manual polling: lock monitoring + drop_pending_updates + graceful stop.
-    import signal as _signal
-
-    updater = application.updater
+    # ── POLLING with auto-retry (409/xatolarda avtomatik qayta urinadi) ──
+    # run_polling() blocking — event loop ichida ishlaydi, xatolarni
+    # avtomatik retry qiladi, SIGTERM/SIGINT da graceful to'xtaydi.
+    print("[BOT] Polling boshlanmoqda (run_polling — auto-retry bilan)...")
     try:
-        # drop_pending_updates=True — eski pending xabarlarni tozalaydi
-        # (409 conflict sabablaridan biri: eski xabarlar navbatda turadi)
-        updater.start_polling(
+        application.run_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES,
+            poll_interval=2.0,        # 2 soniya oralik bilan so'rov yuboradi
+            read_timeout=15,
+            connect_timeout=15,
+            poll_read_timeout=20,
+            bootstrap_retries=5,      # startlda 5 marta urinadi
+            stop_signals=(signal.SIGTERM, signal.SIGINT),
         )
-        print("[BOT] Polling boshlandi (drop_pending_updates=True)")
     except InvalidToken:
         print("=" * 60)
-        print("[BOT] XATO: Telegram bot token NOTO'G'RI yoki rad etildi!")
-        print("[BOT] Hozirgi token: " + (token[:12] + '...' if token else "(bo'sh)"))
-        print("[BOT] Buni tuzatish uchun:")
-        print("[BOT]   1) @BotFather -> /mybots -> sizning bot -> API Token")
-        print("[BOT]   2) Tokenni Admin panel -> Kalitlar -> 'telegram_bot_token'")
-        print("[BOT]      ga yozib saqlang.")
-        print("[BOT]   3) Bot 1 daqiqa ichida avtomatik qayta ishga tushadi.")
-        print("=" * 60)
+        print("[BOT] XATO: Telegram bot token NOTO'G'RI!")
+        print("[BOT] Token: " + (token[:12] + '...' if token else "(bo'sh)"))
         sys.exit(2)
-
-    # ── LOCK MONITORING — eski instansiya to'xtaganini tekshiradi ──
-    # Agar BOSHQA instansiya lock'ni olib qo'ysa (owner_id o'zgarsa) — bu
-    # instansiya o'zini to'xtatadi (yangi instansiya xavfsiz ishlasin).
-    # O'Z heartbeat'i owner_id'ni o'zgartirmaydi — shuning uchun o'z-o'zini
-    # o'ldirish xavfi yo'q.
-    _shutdown_event = threading.Event()
-
-    def _lock_monitor():
-        """Har 15s da lock egasini tekshiradi. Boshqa egasi bo'lsa — to'xtaydi."""
-        while not _shutdown_event.is_set():
-            try:
-                from apps.settings_app.models import Setting as _S
-                val = _S.get_setting('bot_polling_lock', '')
-                if val and ':' in str(val):
-                    owner = str(val).split(':')[0]
-                    if owner and owner != _INSTANCE_ID:
-                        print(f"[BOT] ⚠️ Yangi instansiya lock oldi ({owner}) — to'xtayman")
-                        _shutdown_event.set()
-                        return
-            except Exception:
-                pass
-            _shutdown_event.wait(15)
-
-    threading.Thread(target=_lock_monitor, daemon=True).start()
-
-    # Graceful shutdown: SIGTERM/SIGINT → to'xtatish
-    def _shutdown_handler(signum, frame):
-        print(f"[BOT] Signal {signum} — to'xtatilmoqda...")
-        _shutdown_event.set()
-    _signal.signal(_signal.SIGTERM, _shutdown_handler)
-    _signal.signal(_signal.SIGINT, _shutdown_handler)
-
-    # Asosiy loop — lock monitoring yoki signal kutish
-    try:
-        while not _shutdown_event.is_set():
-            _shutdown_event.wait(5)
-    except KeyboardInterrupt:
-        _shutdown_event.set()
-
-    print("[BOT] Polling to'xtatilmoqda...")
-    try:
-        updater.stop()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[BOT] Polling xatosi: {type(exc).__name__}: {str(exc)[:200]}")
+        sys.exit(1)
     print("[BOT] Bot to'xtatildi")
 
 
