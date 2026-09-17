@@ -27,4 +27,5 @@ EXPOSE 8000
 
 # Migratsiya + statik; keyin cloud_launcher (daphne + bot + user_client).
 # Render $PORT env'ini beradi — cloud_launcher uni ishlatadi.
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput 2>/dev/null; python cloud_launcher.py"]
+# Migration retry: Neon DB uyqudan uyg'onishi uchun vaqt kerak.
+CMD ["sh", "-c", "for i in 1 2 3 4 5; do echo \"Migrate attempt $i...\" && python manage.py migrate --noinput && break || { echo \"Migrate failed, retrying in 10s...\"; sleep 10; }; done && python manage.py collectstatic --noinput 2>/dev/null && echo \"Starting cloud_launcher...\" && exec python cloud_launcher.py"]
