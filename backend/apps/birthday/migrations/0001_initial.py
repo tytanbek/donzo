@@ -13,21 +13,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='user',
-            name='birthday_date',
-            field=models.DateField(blank=True, help_text='Tugilgan kun (DD-MM format)', null=True),
-        ),
-        migrations.AddField(
-            model_name='user',
-            name='birthday_year_hidden',
-            field=models.BooleanField(default=False, help_text='Tugilgan yilni yashirish'),
-        ),
-        migrations.AddField(
-            model_name='user',
-            name='birthday_timezone',
-            field=models.CharField(blank=True, default='Asia/Tashkent', max_length=60),
-        ),
         migrations.CreateModel(
             name='BirthdayReward',
             fields=[
