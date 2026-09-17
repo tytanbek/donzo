@@ -366,6 +366,17 @@ def main():
         Setting.set_setting('cloud_launcher_started_at',
                             dt.datetime.now(dt.timezone.utc).isoformat())
         _log('MAIN', 'boshlanish vaqti yozildi (health-report grace)')
+        # ── Bootstrap env vars → Settings DB (fresh DB needs these) ──
+        _env_settings = {
+            'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN', ''),
+            'telegram_bot_username': os.getenv('TELEGRAM_BOT_USERNAME', 'DONZOROBOT'),
+            'web_app_url': os.getenv('WEB_APP_URL', 'https://donzo.vercel.app'),
+            'settings_encryption_key': os.getenv('SETTINGS_ENCRYPTION_KEY', ''),
+        }
+        for key, val in _env_settings.items():
+            if val and not Setting.get_setting(key, ''):
+                Setting.set_setting(key, val)
+                _log('MAIN', f'settings DB: {key} env var dan yozildi')
     except Exception as exc:
         _log('MAIN', f"boshlanish vaqti yozilmadi: {type(exc).__name__}: {str(exc)[:120]}")
 
