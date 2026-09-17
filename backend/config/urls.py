@@ -8,7 +8,7 @@ from django.conf.urls.static import static
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from apps.ws.views import health_check, api_root, run_migrations, full_status
+from apps.ws.views import health_check, api_root, run_migrations
 
 # SECURITY: the interactive API schema documents EVERY endpoint including
 # the /admin/ panel — it must never be publicly reachable. It is only
@@ -63,7 +63,6 @@ urlpatterns = [
     # Public health-check for uptime monitors (database + config status)
     path('health/', health_check, name='health'),
     path('health/run-migrations/', run_migrations, name='run-migrations'),
-    path('health/full/', full_status, name='full-status'),
     path('api/v1/', include(api_v1_patterns)),
 
 ]
