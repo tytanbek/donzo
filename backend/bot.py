@@ -2282,11 +2282,11 @@ def main():
         application.run_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES,
-            poll_interval=2.0,        # 2 soniya oralik bilan so'rov yuboradi
+            poll_interval=2.0,
+            timeout=15,
             read_timeout=15,
             connect_timeout=15,
-            poll_read_timeout=20,
-            bootstrap_retries=5,      # startlda 5 marta urinadi
+            bootstrap_retries=5,
             stop_signals=(signal.SIGTERM, signal.SIGINT),
         )
     except InvalidToken:
