@@ -87,32 +87,61 @@ def health_check(request):
     return Response(payload, status=status_code)
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def run_migrations(request):
-    """
-    POST /health/run-migrations/
 
-    Force-run Django migrations. Only works when DEBUG=True or
-    a secret token is provided.
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def full_status(request):
     """
-    import subprocess, sys, os
-    token = request.data.get('token', '')
-    if token != 'donzo-migrate-2026':
-        return Response({'error': 'unauthorized'}, status=403)
+    GET /health/full/
+
+    Public diagnostic — shows bot and user client heartbeat status
+    from the database (no secrets exposed).
+    """
+    import time as _time
+    result = {'services': {}}
     try:
-        result = subprocess.run(
-            [sys.executable, 'manage.py', 'migrate', '--noinput'],
-            capture_output=True, text=True, timeout=120,
-            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        )
-        return Response({
-            'stdout': result.stdout[-2000:],
-            'stderr': result.stderr[-2000:],
-            'returncode': result.returncode,
-        })
+        from django.db import connection
+        connection.ensure_connection()
+        result['database'] = 'ok'
+    except Exception:
+        result['database'] = 'error'
+        return Response(result, status=503)
+
+    try:
+        from apps.settings_app.models import Setting
+        # Bot polling lock — fresh = bot running
+        lock = Setting.get_setting('bot_polling_lock', '')
+        if lock and ':' in str(lock):
+            owner, ts = str(lock).split(':', 1)
+            age = int(_time.time() - float(ts))
+            result['services']['bot'] = {
+                'status': 'ok' if age < 120 else 'down',
+                'detail': f'lock {age}s ago (owner: {owner[:20]}...)'
+            }
+        else:
+            result['services']['bot'] = {'status': 'down', 'detail': 'no lock'}
+        # User client heartbeat
+        uc_hb = Setting.get_setting('user_client_worker_heartbeat_at', '')
+        if uc_hb:
+            from django.utils import timezone
+            from datetime import datetime as _dt
+            dt = _dt.fromisoformat(uc_hb.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            age = int((timezone.now() - dt).total_seconds())
+            result['services']['user_client'] = {
+                'status': 'ok' if age < 180 else 'down',
+                'detail': f'heartbeat {age}s ago'
+            }
+        else:
+            result['services']['user_client'] = {'status': 'down', 'detail': 'no heartbeat'}
+        # Cloud launcher started
+        cl_started = Setting.get_setting('cloud_launcher_started_at', '')
+        result['services']['cloud_launcher'] = {'status': 'ok', 'detail': f'started: {cl_started}'}
     except Exception as exc:
-        return Response({'error': str(exc)}, status=500)
+        result['error'] = str(exc)[:200]
+
+    return Response(result, status=200 if result.get('database') == 'ok' else 503)
 
 
 @api_view(['GET'])
