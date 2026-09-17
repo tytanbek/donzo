@@ -71,16 +71,38 @@ def health_check(request):
         db_ok = False
         db_error = str(exc)[:200]  # debug — temp, remove after fix
 
+    # Bot/UserClient heartbeat from DB
+    bot_alive = False
+    uc_alive = False
+    if db_ok:
+        try:
+            import time as _t
+            lock = Setting.get_setting('bot_polling_lock', '')
+            if lock and ':' in str(lock):
+                _ts = float(str(lock).split(':', 1)[1])
+                bot_alive = (_t.time() - _ts) < 120
+            uc_hb = Setting.get_setting('user_client_worker_heartbeat_at', '')
+            if uc_hb:
+                from datetime import datetime as _dt
+                _dt2 = _dt.fromisoformat(str(uc_hb).replace('Z', '+00:00'))
+                if _dt2.tzinfo is None:
+                    _dt2 = _dt2.replace(tzinfo=timezone.utc)
+                uc_alive = (timezone.now() - _dt2).total_seconds() < 180
+        except Exception:
+            pass
+
     payload = {
         'status': 'ok' if db_ok else 'error',
         'database': 'ok' if db_ok else 'error',
-        'db_error': db_error if not db_ok else None,  # debug — temp
+        'db_error': db_error if not db_ok else None,
         'time': timezone.now().isoformat(),
         'config': {
             'telegram_bot_configured': bot_token,
             'web_app_configured': web_app_url,
             'ready': db_ok and bot_token and web_app_url,
         },
+        'bot': 'ok' if bot_alive else 'down',
+        'user_client': 'ok' if uc_alive else 'down',
         'version': '1.0',
     }
     status_code = 200 if db_ok else 503
