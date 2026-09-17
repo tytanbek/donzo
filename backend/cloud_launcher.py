@@ -29,6 +29,30 @@ import threading
 import time
 import urllib.request
 
+# ── Ensure DB migrations are applied before starting any services ──
+def _ensure_migrations():
+    """Run migrate --noinput with retry (Neon DB wake-up may need time)."""
+    for attempt in range(1, 6):
+        try:
+            print(f'[MIGRATE] Attempt {attempt}/5...', flush=True)
+            result = subprocess.run(
+                [sys.executable, 'manage.py', 'migrate', '--noinput'],
+                cwd=BASE_DIR, capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                print('[MIGRATE] ✅ Success', flush=True)
+                return True
+            else:
+                print(f'[MIGRATE] ❌ Exit {result.returncode}: {result.stderr[:300]}', flush=True)
+        except Exception as exc:
+            print(f'[MIGRATE] ❌ Exception: {exc}', flush=True)
+        if attempt < 5:
+            time.sleep(15)
+    print('[MIGRATE] ⚠️ All 5 attempts failed — starting anyway', flush=True)
+    return False
+
+_ensure_migrations()
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = os.getenv('PORT', '8000')
 PING_URL = (os.getenv('RENDER_EXTERNAL_URL') or 'https://donzo-backend-v8oz.onrender.com').rstrip('/')
