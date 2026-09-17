@@ -67,12 +67,14 @@ def health_check(request):
         from apps.settings_app.models import Setting
         bot_token = bool(Setting.get_setting('telegram_bot_token', ''))
         web_app_url = bool(Setting.get_setting('web_app_url', ''))
-    except Exception:
+    except Exception as exc:
         db_ok = False
+        db_error = str(exc)[:200]  # debug — temp, remove after fix
 
     payload = {
         'status': 'ok' if db_ok else 'error',
         'database': 'ok' if db_ok else 'error',
+        'db_error': db_error if not db_ok else None,  # debug — temp
         'time': timezone.now().isoformat(),
         'config': {
             'telegram_bot_configured': bot_token,
