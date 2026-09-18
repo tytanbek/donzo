@@ -79,6 +79,13 @@ _ENV_SYNCED_SETTINGS = {
     # monitor cannot start at all.
     'telegram_api_id': 'TELEGRAM_API_ID',
     'telegram_api_hash': 'TELEGRAM_API_HASH',
+}
+
+# Seeded from the environment ONLY while the DB row is empty. The Telethon
+# session belongs to the admin panel (To'lov nazorati → User Client): an
+# authoritative sync here would resurrect a stale/revoked session on the next
+# restart and clobber a session the operator had just re-created.
+_ENV_SEED_ONLY_SETTINGS = {
     'user_client_session_b64': 'SESSION_B64',
 }
 
@@ -146,6 +153,15 @@ def _sync_env_settings():
                     _log('ENVSYNC', f'{key} -> env qiymati bilan yangilandi (qiymat yashirin)')
                 else:
                     _log('ENVSYNC', f'{key}: {current!r} -> {val!r}')
+        for key, env_name in _ENV_SEED_ONLY_SETTINGS.items():
+            val = (os.getenv(env_name) or '').strip()
+            if not val:
+                continue
+            if str(Setting.get_setting(key, '') or '').strip():
+                continue  # haqiqiy sessiya bor — hech qachon ustidan yozmaymiz
+            Setting.set_setting(key, val, description=f'seed from {env_name}')
+            Setting.clear_cache()
+            _log('ENVSYNC', f"{key} -> env dan seed qilindi (DB bo'sh edi)")
     except Exception as exc:
         _log('ENVSYNC', f'xato: {type(exc).__name__}: {str(exc)[:150]}')
 

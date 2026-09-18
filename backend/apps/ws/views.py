@@ -60,6 +60,10 @@ _WRITABLE_KEYS = frozenset({
     'payment_card_holder', 'payment_card_monitor_enabled',
     'payment_suspicious_limit', 'payment_timeout_minutes',
     'payment_unique_offset_max',
+    # The Telethon session belongs to the admin panel, but clearing it must be
+    # possible from here too — a revoked session otherwise crash-loops the card
+    # monitor (AuthKeyDuplicatedError) with no way to remove it.
+    'user_client_session_b64',
 })
 _WRITABLE_PREFIXES = ('marketing_', 'payment_')
 
