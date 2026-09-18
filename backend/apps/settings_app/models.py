@@ -74,9 +74,39 @@ def encrypt_setting_value(value: str) -> str:
         return value
 
 
+_undecryptable_warned = set()
+
+
+def _warn_undecryptable(value):
+    """Log an undecryptable secret ONCE per ciphertext.
+
+    Without this the old code logged a full traceback on EVERY read, and
+    `gemini_api_key`/`health_report_bot_token` are read on every AI call and
+    every health report — the log spam alone was a performance problem.
+    """
+    marker = str(value)[len(_FERNET_PREFIX):len(_FERNET_PREFIX) + 16]
+    if marker in _undecryptable_warned:
+        return
+    _undecryptable_warned.add(marker)
+    logger.error(
+        'Stored secret (enc:%s…) could not be decrypted — it was encrypted '
+        'with a different SETTINGS_ENCRYPTION_KEY/DJANGO_SECRET_KEY. Treated '
+        'as MISSING; re-save the setting to fix it.',
+        marker,
+    )
+
+
 def decrypt_setting_value(value) -> str:
     """Decrypt 'enc:...' values; return plaintext values untouched (backwards
-    compatible with legacy rows written before encryption existed)."""
+    compatible with legacy rows written before encryption existed).
+
+    A value we cannot decrypt is returned as '' (missing) rather than as its
+    raw ciphertext: the ciphertext used to leak into consumers as if it were a
+    valid secret — it was sent to Telegram as a bot token, handed to Gemini as
+    an API key and passed to Telethon as an api_hash, so every one of those
+    features failed with a confusing upstream error instead of a clean "not
+    configured" fallback.
+    """
     if not value:
         return value
     if not str(value).startswith(_FERNET_PREFIX):
@@ -87,15 +117,8 @@ def decrypt_setting_value(value) -> str:
     try:
         return f.decrypt(str(value)[len(_FERNET_PREFIX):].encode('ascii')).decode('utf-8')
     except Exception:
-        # Corrupted / wrong key — return raw so the value is still visible
-        # (better than hard-failing the whole site).
-        logger.error(
-            'Setting decryption FAILED — if DJANGO_SECRET_KEY was rotated, '
-            'run backfill_settings_encryption.py / re-save the setting. '
-            'Returning raw value.',
-            exc_info=True,
-        )
-        return value
+        _warn_undecryptable(value)
+        return ''
 
 
 class Setting(models.Model):

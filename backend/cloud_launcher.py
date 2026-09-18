@@ -73,6 +73,13 @@ _ENV_SYNCED_SETTINGS = {
     'telegram_bot_token': 'TELEGRAM_BOT_TOKEN',
     'telegram_bot_username': 'TELEGRAM_BOT_USERNAME',
     'gemini_api_key': 'GEMINI_API_KEY',
+    # The SQLite→Neon restore carried rows encrypted with a key this
+    # deployment no longer holds (undecryptable), so these are re-seeded from
+    # the environment: without api_id/api_hash/session the Telethon card
+    # monitor cannot start at all.
+    'telegram_api_id': 'TELEGRAM_API_ID',
+    'telegram_api_hash': 'TELEGRAM_API_HASH',
+    'user_client_session_b64': 'SESSION_B64',
 }
 
 # ── Service state (remote diagnostics) ────────────────────────────────────
@@ -134,7 +141,8 @@ def _sync_env_settings():
             if current != val:
                 Setting.set_setting(key, val, description=f'env-synced ({env_name})')
                 Setting.clear_cache()
-                if key in ('telegram_bot_token', 'gemini_api_key', 'user_client_session_b64'):
+                if key in ('telegram_bot_token', 'gemini_api_key',
+                           'user_client_session_b64', 'telegram_api_hash'):
                     _log('ENVSYNC', f'{key} -> env qiymati bilan yangilandi (qiymat yashirin)')
                 else:
                     _log('ENVSYNC', f'{key}: {current!r} -> {val!r}')
