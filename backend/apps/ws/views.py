@@ -153,13 +153,12 @@ def import_sqlite_backup(request):
             notnull_defaults = {}  # {(table, col): default_value}
             try:
                 pg_cursor.execute("""
-                    SELECT table_name, column_name, data_type
+                    SELECT table_name, column_name, data_type, column_default
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
                       AND is_nullable = 'NO'
-                      AND column_default IS NULL
                 """)
-                for tbl, col, dtype in pg_cursor.fetchall():
+                for tbl, col, dtype, cdef in pg_cursor.fetchall():
                     if col == 'id':
                         continue
                     if dtype == 'boolean':
