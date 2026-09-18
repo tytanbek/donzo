@@ -366,44 +366,39 @@ def diag_fix_sequences(request):
 
     from django.db import connection
 
-    sql = ("""
-        SELECT c.relname, a.attname,
-               pg_get_serial_sequence(quote_ident(c.relname), a.attname)
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
-        WHERE c.relkind = 'r' AND n.nspname = current_schema()
-          AND pg_get_serial_sequence(quote_ident(c.relname), a.attname) IS NOT NULL
-        ORDER BY c.relname
-    """)
     try:
-        with connection.cursor() as cur:
-            cur.execute(sql)
-            targets = cur.fetchall()
+        tables = sorted(connection.introspection.table_names())
     except Exception as exc:
-        return JsonResponse({'error': f'{type(exc).__name__}: {exc}'}, status=500)
+        return JsonResponse(
+            {'error': f'introspection: {type(exc).__name__}: {exc}'}, status=500)
 
-    report, fixed = {}, 0
-    for tbl, col, seq in targets:
+    report, fixed, skipped = {}, 0, 0
+    for tbl in tables:
         try:
             with connection.cursor() as cur:
-                cur.execute(f'SELECT COALESCE(MAX("{col}"), 0) FROM "{tbl}"')
+                cur.execute("SELECT pg_get_serial_sequence(%s, 'id')", [f'"{tbl}"'])
+                row = cur.fetchone()
+                seq = row[0] if row else None
+                if not seq:
+                    skipped += 1
+                    continue
+                cur.execute(f'SELECT COALESCE(MAX("id"), 0) FROM "{tbl}"')
                 mx = int(cur.fetchone()[0] or 0)
                 cur.execute(f'SELECT last_value FROM {seq}')
                 last = int(cur.fetchone()[0])
-            entry = {'max_id': mx, 'seq_last': last, 'drift': mx - last}
-            if mx > 0:
-                with connection.cursor() as cur:
+                # setval(..., mx, true) → next id = mx + 1
+                if mx > 0:
                     cur.execute('SELECT setval(%s, %s, true)', [seq, mx])
-            else:
-                with connection.cursor() as cur:
+                else:
                     cur.execute('SELECT setval(%s, 1, false)', [seq])
-            entry['fixed'] = True
+            report[tbl] = {'max_id': mx, 'seq_last': last,
+                           'drift': mx - last, 'fixed': True}
             fixed += 1
-            report[tbl] = entry
         except Exception as exc:
+            # One odd table must never abort the whole repair.
             report[tbl] = {'error': f'{type(exc).__name__}: {str(exc)[:120]}'}
-    return JsonResponse({'tables': len(targets), 'fixed': fixed, 'report': report})
+    return JsonResponse({'tables': len(tables), 'fixed': fixed,
+                         'skipped_no_sequence': skipped, 'report': report})
 
 
 @csrf_exempt
