@@ -134,15 +134,20 @@ export default function RootLayout({
         const cst = Number(tg2?.contentSafeAreaInset?.top || 0);
         const csb = Number(tg2?.contentSafeAreaInset?.bottom || 0);
         // Fullscreen'da Telegram o'z boshqaruv panelini (Закрыть / menyu)
-        // kontent USTIGA qo'yadi. Ba'zi iOS WebView'larda
-        // contentSafeAreaInset 0 bo'lib qoladi — natijada yuqori qator (menyu
-        // tugmasi + sarlavha) panel ostida ko'rinmay qoladi. Faqat
-        // "fullscreen + 0" holatida minimal zaxira qo'yamiz — oddiy brauzerda
-        // va to'g'ri qiymat kelganda hech narsa o'zgarmaydi.
+        // kontent USTIGA qo'yadi va buni contentSafeAreaInset.top orqali
+        // e'lon qiladi. Ba'zi iOS WebView'larda u 0 bo'lib qoladi — natijada
+        // yuqori qator (menyu tugmasi + sarlavha) panel ostida ko'rinmay
+        // qoladi. safeAreaInset.top esa faqat notch'ni beradi (Telegram
+        // panelini emas), shuning uchun panel balandligini o'zimiz qo'shamiz.
+        // contentSafeAreaInset to'g'ri kelganda unga tegmaymiz.
         const fullscreen = tg2?.isFullscreen === true;
-        const minTop = fullscreen ? 56 : 0;
+        const TG_TOP_BAR = 56; // Telegram fullscreen boshqaruv paneli balandligi
+        let topInset = Math.max(st, cst);
+        if (fullscreen && cst <= 0) {
+          topInset = Math.max(topInset, st + TG_TOP_BAR, TG_TOP_BAR);
+        }
         const root = document.documentElement;
-        root.style.setProperty('--tg-safe-top', `${Math.max(st, cst, minTop)}px`);
+        root.style.setProperty('--tg-safe-top', `${topInset}px`);
         root.style.setProperty('--tg-safe-bottom', `${Math.max(sb, csb)}px`);
       } catch { /* noop */ }
     };
