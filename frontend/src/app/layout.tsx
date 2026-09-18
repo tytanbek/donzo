@@ -132,21 +132,30 @@ export default function RootLayout({
         const st = Number(tg2?.safeAreaInset?.top || 0);
         const sb = Number(tg2?.safeAreaInset?.bottom || 0);
         const cst = Number(tg2?.contentSafeAreaInset?.top || 0);
+        const csb = Number(tg2?.contentSafeAreaInset?.bottom || 0);
+        // Fullscreen'da Telegram o'z boshqaruv panelini (Закрыть / menyu)
+        // kontent USTIGA qo'yadi. Ba'zi iOS WebView'larda
+        // contentSafeAreaInset 0 bo'lib qoladi — natijada yuqori qator (menyu
+        // tugmasi + sarlavha) panel ostida ko'rinmay qoladi. Faqat
+        // "fullscreen + 0" holatida minimal zaxira qo'yamiz — oddiy brauzerda
+        // va to'g'ri qiymat kelganda hech narsa o'zgarmaydi.
+        const fullscreen = tg2?.isFullscreen === true;
+        const minTop = fullscreen ? 56 : 0;
         const root = document.documentElement;
-        root.style.setProperty('--tg-safe-top', `${Math.max(st, cst)}px`);
-        root.style.setProperty('--tg-safe-bottom', `${sb}px`);
+        root.style.setProperty('--tg-safe-top', `${Math.max(st, cst, minTop)}px`);
+        root.style.setProperty('--tg-safe-bottom', `${Math.max(sb, csb)}px`);
       } catch { /* noop */ }
     };
     applySafeArea();
     try {
       const tg3: any = (window as any).Telegram?.WebApp;
-      tg3?.onEvent?.('safeAreaChanged', applySafeArea);
-      tg3?.onEvent?.('contentSafeAreaChanged', applySafeArea);
-      tg3?.onEvent?.('viewportChanged', applySafeArea);
+      ['safeAreaChanged', 'contentSafeAreaChanged', 'viewportChanged', 'fullscreenChanged']
+        .forEach((evt) => tg3?.onEvent?.(evt, applySafeArea));
     } catch { /* noop */ }
-    // Safari'da env() qiymati kech keladi — 1s dan keyin ham qayta o'lchaymiz
-    const t = window.setTimeout(applySafeArea, 1000);
-    return () => { window.clearTimeout(t); };
+    // Fullscreen ruxsati va Safari'ning env() hisobi kechikadi — bir necha
+    // marta qayta o'lchaymiz (150ms / 1s / 2.5s).
+    const timers = [150, 1000, 2500].map((ms) => window.setTimeout(applySafeArea, ms));
+    return () => { timers.forEach((tm) => window.clearTimeout(tm)); };
   }, []);
 
   // ── Rol bo'yicha yo'naltirish ────────────────────────────────────────────
@@ -192,7 +201,12 @@ export default function RootLayout({
             <meta name="theme-color" content="#0F172A" />
           </head>
         <body className="cyber-grid min-h-screen">
-          <div className="min-h-screen flex items-center justify-center">
+          {/* Boshlang'ich spinner ham xuddi shu inset'ni hurmat qiladi —
+              aks holda u Telegram boshqaruv paneli ostida qoladi. */}
+          <div
+            className="min-h-screen flex items-center justify-center"
+            style={{ paddingTop: 'var(--safe-top, 0px)' }}
+          >
             <div className="w-10 h-10 rounded-2xl border-2 border-[#00F5FF]/30 border-t-[#00F5FF] animate-spin" />
           </div>
         </body>
