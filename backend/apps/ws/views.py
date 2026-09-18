@@ -206,7 +206,24 @@ def import_sqlite_backup(request):
                             )
                             inserted += 1
                         except Exception as e:
-                            if len(errors_log) < 5:
+                            # Try again with NOT NULL defaults for boolean columns
+                            if 'not-null constraint' in str(e).lower() and boolean_cols:
+                                fixed_values = []
+                                for i, col in enumerate(common_cols):
+                                    if col in boolean_cols and values[i] is None:
+                                        fixed_values.append(False)
+                                    else:
+                                        fixed_values.append(values[i])
+                                try:
+                                    pg_cursor.execute(
+                                        f'INSERT INTO "{table}" ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING',
+                                        fixed_values
+                                    )
+                                    inserted += 1
+                                except Exception as e2:
+                                    if len(errors_log) < 5:
+                                        errors_log.append(f'{type(e2).__name__}: {str(e2)[:100]}')
+                            elif len(errors_log) < 5:
                                 errors_log.append(f'{type(e).__name__}: {str(e)[:100]}')
 
                     results[table] = {'rows': count, 'imported': inserted, 'status': 'ok'}
