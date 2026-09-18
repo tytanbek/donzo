@@ -172,6 +172,7 @@ def import_sqlite_backup(request):
                     rows = cursor.fetchall()
 
                     inserted = 0
+                    errors_log = []
                     for row in rows:
                         values = [row[col] for col in common_cols]
                         placeholders = ', '.join(['%s'] * len(common_cols))
@@ -182,10 +183,13 @@ def import_sqlite_backup(request):
                                 values
                             )
                             inserted += 1
-                        except Exception:
-                            pass  # Skip problematic rows
+                        except Exception as e:
+                            if len(errors_log) < 5:
+                                errors_log.append(f'{type(e).__name__}: {str(e)[:100]}')
 
                     results[table] = {'rows': count, 'imported': inserted, 'status': 'ok'}
+                    if errors_log:
+                        results[table]['errors'] = errors_log
                     imported += inserted
 
                 except Exception as exc:
