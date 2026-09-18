@@ -26,19 +26,33 @@ def health_check(request):
     except Exception as exc:
         db_error = str(exc)[:200]
 
+    import time as _time_mod
     try:
         bot_hb = Setting.get_setting('bot_polling_lock', '')
         bot_ok = bool(bot_hb)
         if bot_hb:
-            from datetime import datetime, timezone
-            hb_time = datetime.fromisoformat(bot_hb.replace('Z', '+00:00'))
-            bot_ok = (datetime.now(timezone.utc) - hb_time).total_seconds() < 120
+            raw = str(bot_hb)
+            # Format: '<owner>:<unix_ts>' or '<unix_ts>' or ISO datetime
+            ts_raw = raw.split(':', 1)[1] if ':' in raw else raw
+            try:
+                lt = float(ts_raw)
+                bot_ok = (_time_mod.time() - lt) < 120
+            except ValueError:
+                from datetime import datetime, timezone
+                hb_time = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+                bot_ok = (datetime.now(timezone.utc) - hb_time).total_seconds() < 120
         uc_hb = Setting.get_setting('user_client_worker_heartbeat_at', '')
         uc_ok = bool(uc_hb)
         if uc_hb:
-            from datetime import datetime, timezone
-            uc_time = datetime.fromisoformat(uc_hb.replace('Z', '+00:00'))
-            uc_ok = (datetime.now(timezone.utc) - uc_time).total_seconds() < 180
+            raw_uc = str(uc_hb)
+            ts_uc = raw_uc.split(':', 1)[1] if ':' in raw_uc else raw_uc
+            try:
+                lt_uc = float(ts_uc)
+                uc_ok = (_time_mod.time() - lt_uc) < 180
+            except ValueError:
+                from datetime import datetime, timezone
+                uc_time = datetime.fromisoformat(raw_uc.replace('Z', '+00:00'))
+                uc_ok = (datetime.now(timezone.utc) - uc_time).total_seconds() < 180
     except Exception:
         bot_ok = False
         uc_ok = False
