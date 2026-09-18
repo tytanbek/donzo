@@ -133,6 +133,27 @@ def import_sqlite_backup(request):
         skipped = 0
 
         with connection.cursor() as pg_cursor:
+            # Temporarily ALTER NOT NULL columns to allow NULL during import
+            try:
+                pg_cursor.execute("""
+                    SELECT table_name, column_name, data_type, column_default
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND is_nullable = 'NO'
+                      AND column_default IS NULL
+                """)
+                nullable_fixes = []
+                for tbl, col, dtype, cdef in pg_cursor.fetchall():
+                    if col == 'id':
+                        continue
+                    try:
+                        pg_cursor.execute(f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" DROP NOT NULL')
+                        nullable_fixes.append((tbl, col))
+                    except Exception:
+                        pass
+            except Exception:
+                nullable_fixes = []
+
             # Disable ALL FK constraints on ALL tables
             pg_cursor.execute("""
                 SELECT conrelid::regclass::text AS table_name,
@@ -295,12 +316,17 @@ def import_sqlite_backup(request):
 
         sqlite_conn.close()
 
-        # Re-enable FK constraints
+        # Re-enable FK constraints + NOT NULL
         try:
             with connection.cursor() as pg_cursor:
                 for tbl, con in disabled_fks:
                     try:
                         pg_cursor.execute(f'ALTER TABLE "{tbl}" ADD CONSTRAINT "{con}" NOT VALID')
+                    except Exception:
+                        pass
+                for tbl, col in nullable_fixes:
+                    try:
+                        pg_cursor.execute(f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" SET NOT NULL')
                     except Exception:
                         pass
         except Exception:
