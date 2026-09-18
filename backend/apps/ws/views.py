@@ -133,6 +133,15 @@ def import_sqlite_backup(request):
         skipped = 0
 
         with connection.cursor() as pg_cursor:
+            # Disable FK checks and constraints for import
+            try:
+                pg_cursor.execute('SET session_replication_role = replica')
+            except Exception:
+                pass  # Neon may not support this
+            try:
+                pg_cursor.execute('SET CONSTRAINTS ALL DEFERRED')
+            except Exception:
+                pass
             for table in tables:
                 try:
                     cursor.execute(f'SELECT COUNT(*) as cnt FROM "{table}"')
@@ -206,14 +215,24 @@ def import_sqlite_backup(request):
                             )
                             inserted += 1
                         except Exception as e:
-                            # Try again with NOT NULL defaults for boolean columns
-                            if 'not-null constraint' in str(e).lower() and boolean_cols:
+                            # Retry: fill NOT NULL columns with type-appropriate defaults
+                            if 'not-null constraint' in str(e).lower():
                                 fixed_values = []
                                 for i, col in enumerate(common_cols):
-                                    if col in boolean_cols and values[i] is None:
-                                        fixed_values.append(False)
-                                    else:
-                                        fixed_values.append(values[i])
+                                    v = values[i]
+                                    if v is None:
+                                        pg_t = pg_types.get(col, '')
+                                        if pg_t == 'boolean':
+                                            v = False
+                                        elif pg_t in ('integer', 'bigint', 'smallint'):
+                                            v = 0
+                                        elif pg_t in ('double precision', 'real', 'numeric'):
+                                            v = 0.0
+                                        elif 'char' in pg_t or pg_t == 'text':
+                                            v = ''
+                                        else:
+                                            v = False  # safe default
+                                    fixed_values.append(v)
                                 try:
                                     pg_cursor.execute(
                                         f'INSERT INTO "{table}" ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING',
@@ -223,8 +242,9 @@ def import_sqlite_backup(request):
                                 except Exception as e2:
                                     if len(errors_log) < 5:
                                         errors_log.append(f'{type(e2).__name__}: {str(e2)[:100]}')
-                            elif len(errors_log) < 5:
-                                errors_log.append(f'{type(e).__name__}: {str(e)[:100]}')
+                            else:
+                                if len(errors_log) < 5:
+                                    errors_log.append(f'{type(e).__name__}: {str(e)[:100]}')
 
                     results[table] = {'rows': count, 'imported': inserted, 'status': 'ok'}
                     if errors_log:
@@ -235,6 +255,13 @@ def import_sqlite_backup(request):
                     results[table] = {'error': str(exc)[:200], 'status': 'error'}
 
         sqlite_conn.close()
+
+        # Re-enable constraints
+        try:
+            with connection.cursor() as pg_cursor:
+                pg_cursor.execute('SET session_replication_role = DEFAULT')
+        except Exception:
+            pass
 
         return JsonResponse({
             'status': 'completed',
