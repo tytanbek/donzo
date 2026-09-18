@@ -8,7 +8,9 @@ from django.conf.urls.static import static
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from apps.ws.views import health_check, api_root, run_migrations
+from apps.ws.views import (
+    health_check, api_root, diag_state, diag_sync_urls, diag_set, diag_migrate,
+)
 
 # SECURITY: the interactive API schema documents EVERY endpoint including
 # the /admin/ panel — it must never be publicly reachable. It is only
@@ -62,7 +64,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # Public health-check for uptime monitors (database + config status)
     path('health/', health_check, name='health'),
-    path('health/run-migrations/', run_migrations, name='run-migrations'),
+    # Ops diagnostics + repair. Every view here requires the DIAG_TOKEN header
+    # (X-Diag-Token) and answers 404 without it — never expose these publicly.
+    path('internal/diag/', diag_state, name='diag-state'),
+    path('internal/diag/sync-urls/', diag_sync_urls, name='diag-sync-urls'),
+    path('internal/diag/set/', diag_set, name='diag-set'),
+    path('internal/diag/migrate/', diag_migrate, name='diag-migrate'),
     path('api/v1/', include(api_v1_patterns)),
 
 ]

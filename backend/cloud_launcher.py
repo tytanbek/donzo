@@ -21,6 +21,7 @@ Ishlatish:  python cloud_launcher.py
 """
 import base64
 import datetime as dt
+import json
 import os
 import signal
 import subprocess
@@ -61,6 +62,93 @@ AUDIT_HOUR = int(os.getenv('AUDIT_REPORT_HOUR', '9'))
 CARD_REPORT_HOUR = int(os.getenv('CARD_REPORT_HOUR', '4'))  # UTC — 09:00 Toshkent
 
 _stop = threading.Event()
+
+# ── Env → Settings DB sync ────────────────────────────────────────────────
+# These keys are owned by the ENVIRONMENT, not by the DB. The SQLite→Postgres
+# restore left `web_app_url` stale and the bot reads that row on EVERY message,
+# so a stale value keeps sending users to the wrong Web App. Re-applying the
+# sync periodically means the DB can never drift back to an old URL.
+_ENV_SYNCED_SETTINGS = {
+    'web_app_url': 'WEB_APP_URL',
+    'telegram_bot_token': 'TELEGRAM_BOT_TOKEN',
+    'telegram_bot_username': 'TELEGRAM_BOT_USERNAME',
+    'gemini_api_key': 'GEMINI_API_KEY',
+}
+
+# ── Service state (remote diagnostics) ────────────────────────────────────
+# Every supervised process publishes pid / exit code / last output lines into
+# the Settings DB, so /internal/diag/ can show WHY a service is down without
+# shell access to the container.
+_SVC_TAIL = {}
+_SVC_TAIL_LOCK = threading.Lock()
+_SVC_TAIL_LINES = 25
+
+
+def _svc_tail_push(name: str, text: str):
+    with _SVC_TAIL_LOCK:
+        buf = _SVC_TAIL.setdefault(name, [])
+        buf.append(text)
+        del buf[:-_SVC_TAIL_LINES]
+
+
+def _svc_tail(name: str):
+    with _SVC_TAIL_LOCK:
+        return list(_SVC_TAIL.get(name, []))
+
+
+def _svc_state(name: str, status: str, **extra):
+    """Persist a service's live state for /internal/diag/. Never raises."""
+    try:
+        import django
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        django.setup()
+        from apps.settings_app.models import Setting
+        payload = {
+            'status': status,
+            'at': dt.datetime.now(dt.timezone.utc).isoformat(),
+            'tail': _svc_tail(name)[-12:],
+        }
+        payload.update(extra)
+        Setting.set_setting(f'svc_state_{name.lower()}', json.dumps(payload))
+    except Exception as exc:
+        _log(name, f'state yozilmadi: {type(exc).__name__}: {str(exc)[:100]}')
+
+
+def _sync_env_settings():
+    """Push env values into the Settings DB when they differ. Never raises."""
+    try:
+        import django
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        django.setup()
+        from apps.settings_app.models import Setting
+        for key, env_name in _ENV_SYNCED_SETTINGS.items():
+            val = (os.getenv(env_name) or '').strip()
+            if not val:
+                continue
+            if key == 'web_app_url':
+                val = val.rstrip('/')
+                if not val.startswith('https://'):
+                    _log('ENVSYNC', f'{env_name} https:// emas - o\'tkazib yuborildi')
+                    continue
+            current = str(Setting.get_setting(key, '') or '').strip().rstrip('/')
+            if current != val:
+                Setting.set_setting(key, val, description=f'env-synced ({env_name})')
+                Setting.clear_cache()
+                if key in ('telegram_bot_token', 'gemini_api_key', 'user_client_session_b64'):
+                    _log('ENVSYNC', f'{key} -> env qiymati bilan yangilandi (qiymat yashirin)')
+                else:
+                    _log('ENVSYNC', f'{key}: {current!r} -> {val!r}')
+    except Exception as exc:
+        _log('ENVSYNC', f'xato: {type(exc).__name__}: {str(exc)[:150]}')
+
+
+def _env_sync_loop():
+    """Startup sync + periodic re-apply (env is the source of truth)."""
+    _sync_env_settings()
+    while not _stop.is_set():
+        if _stop.wait(300):
+            return
+        _sync_env_settings()
 
 
 def _log(tag: str, msg: str):
@@ -115,6 +203,7 @@ def _relay(name: str, proc: subprocess.Popen):
             for line in iter(stream.readline, b''):
                 text = line.decode('utf-8', errors='replace').rstrip('\n')
                 if text:
+                    _svc_tail_push(name, text)
                     _log(name, text)
         except Exception:
             pass
@@ -143,6 +232,7 @@ def _supervise(name, cmd):
         BASE_DIR, 'sessions',
         '.restart_requested' if _slot_suffix == '1' else f'.restart_requested_{_slot_suffix}',
     )
+    restarts = 0
     while not _stop.is_set():
         if is_userclient and _slot_suffix == '1':
             try:
@@ -151,16 +241,22 @@ def _supervise(name, cmd):
                 _log(name, f'sessiya bootstrap xatosi: {type(exc).__name__}: {str(exc)[:120]}')
         proc = _spawn(cmd, name)
         if proc is None:
+            _svc_state(name, 'spawn_failed', restarts=restarts, backoff_s=backoff)
             _stop.wait(backoff)
             backoff = min(backoff * 2, 60)
             continue
         _t0 = time.time()
+        restarts += 1
         _log(name, f"started (pid={proc.pid})")
+        _svc_state(name, 'running', pid=proc.pid, restarts=restarts)
         rc = proc.wait()
         if _stop.is_set():
             _log(name, f"stopped (rc={rc}) — launcher yakunlanmoqda")
+            _svc_state(name, 'stopped', rc=rc, restarts=restarts)
             return
         lived = time.time() - _t0
+        _svc_state(name, 'exited' if rc == 0 else 'crashed', rc=rc,
+                   lived_s=int(lived), restarts=restarts, backoff_s=backoff)
         if rc == 0:
             _log(name, f"chiqdi (rc=0) — {backoff}s keyin qayta ishga tushadi")
         else:
@@ -408,6 +504,7 @@ def main():
             _supervised_slots.add(n.upper().replace('USERCLIENT', '') or '1')
         threads.append(threading.Thread(target=_supervise, args=(n, c), daemon=True))
     threads.append(threading.Thread(target=_pinger, daemon=True))
+    threads.append(threading.Thread(target=_env_sync_loop, daemon=True))
     threads.append(threading.Thread(target=_daily_audit, daemon=True))
     threads.append(threading.Thread(target=_health_report_loop, daemon=True))
     threads.append(threading.Thread(target=_run_migrations, daemon=True))
