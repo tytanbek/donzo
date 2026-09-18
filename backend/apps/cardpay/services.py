@@ -1046,6 +1046,27 @@ def build_health_report() -> str:
     monitor_ok = bool(s.get('monitor_chat_id'))
     _check('Monitor chat', monitor_ok, s.get('monitor_chat_id') or 'sozlanmagan')
 
+    # 5a) AI (Gemini) — staff va guruh AI javoblari faqat shu kalit bilan
+    # ishlaydi. Kalit yo'q bo'lsa bot guruhlarda jim qoladi; sabab hisobotning
+    # o'zida ko'rinsin ("bot ishlamayapti" ning eng ko'p uchraydigan sababi).
+    try:
+        from apps.security import staff_ai as _staff_ai
+        _ai_key = bool((Setting.get_setting('gemini_api_key', '') or '').strip())
+        _ai_on = (Setting.get_setting('security_ai_enabled', 'False') or '').lower() == 'true'
+        _grp = (Setting.get_setting('marketing_group_enabled', 'False') or '').lower() == 'true'
+        if _ai_key and _ai_on and _staff_ai.is_enabled():
+            _detail = Setting.get_setting('gemini_model', '') or 'model?'
+            if not _grp:
+                _detail += " | guruh javoblari o'chiq"
+            _check('AI (Gemini)', True, _detail)
+        elif not _ai_key:
+            _check('AI (Gemini)', False,
+                   "kalit yo'q — Admin panel → Xavfsizlik → gemini_api_key")
+        else:
+            _check('AI (Gemini)', False, f"o'chirilgan (ai_enabled={_ai_on})")
+    except Exception as exc:
+        _check('AI (Gemini)', False, f'tekshirilmadi: {type(exc).__name__}')
+
     # 5b) Card limits — favqulodda holat: barcha kartalar limitda
     from .models import PaymentCard
     card_status = 'OK'
