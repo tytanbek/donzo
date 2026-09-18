@@ -1518,6 +1518,8 @@ def _record_group_member(chat_id: str, username: str, first_name: str = '',
     """Marketing guruhida ko'rilgan a'zoni DB'da eslab qoladi (username bilan).
 
     Bot qayta ishga tushsa ham a'zolar saqlanadi — jadval: marketing_group_members.
+    NOTE: bu funksiya sync — async kontekstdan sync_to_async orqali chaqirilishi
+    SHART (aks holda Django SynchronousOnlyOperation berib, a'zo yozilmaydi).
     """
     try:
         from apps.settings_app.models import MarketingGroupMember
@@ -1791,9 +1793,11 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = str(msg.chat.id)
     username = getattr(user, 'username', None) or ''
     # A'zoni eslab qolamiz — keyin username orqali murojaat qilish uchun
-    _record_group_member(chat_id, username,
-                         getattr(user, 'first_name', '') or '',
-                         getattr(user, 'id', None))
+    # (DB yozuvi async kontekstda — sync_to_async shart, aks holda
+    # SynchronousOnlyOperation bilan a'zo DB'ga yozilmaydi)
+    await sync_to_async(_record_group_member)(chat_id, username,
+                                              getattr(user, 'first_name', '') or '',
+                                              getattr(user, 'id', None))
     # Operatsion (staff/hisobot/monitor) guruhlarni o'tkazib yuborish
     try:
         skip = {
