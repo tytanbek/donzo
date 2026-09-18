@@ -116,9 +116,17 @@ def import_sqlite_backup(request):
         sqlite_conn.row_factory = sqlite3.Row
         cursor = sqlite_conn.cursor()
 
-        # Get all tables
+        # Get all tables — import in dependency order (users first)
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        tables = [row['name'] for row in cursor.fetchall()]
+        all_tables = [row['name'] for row in cursor.fetchall()]
+        # Priority order: independent tables first, then dependent
+        priority = ['users', 'settings', 'categories', 'services', 'service_fields',
+                     'packages', 'orders', 'payments', 'balance_transactions',
+                     'promo_codes', 'banners', 'card_payment_messages',
+                     'audit_logs', 'notifications', 'token_blacklist_outstandingtoken',
+                     'token_blacklist_blacklistedtoken']
+        tables = [t for t in priority if t in all_tables]
+        tables += [t for t in all_tables if t not in tables]
 
         results = {}
         imported = 0
@@ -167,6 +175,14 @@ def import_sqlite_backup(request):
                         skipped += count
                         continue
 
+                    # Get PG column types for boolean conversion
+                    pg_cursor.execute(
+                        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = %s",
+                        [table]
+                    )
+                    pg_types = {row[0]: row[1] for row in pg_cursor.fetchall()}
+                    boolean_cols = {c for c in common_cols if pg_types.get(c) == 'boolean'}
+
                     # Fetch all rows
                     cursor.execute(f'SELECT {", ".join(f"\"{c}\"" for c in common_cols)} FROM "{table}"')
                     rows = cursor.fetchall()
@@ -174,7 +190,13 @@ def import_sqlite_backup(request):
                     inserted = 0
                     errors_log = []
                     for row in rows:
-                        values = [row[col] for col in common_cols]
+                        values = []
+                        for col in common_cols:
+                            v = row[col]
+                            # Convert SQLite integer booleans to Python booleans for PG
+                            if col in boolean_cols and isinstance(v, int):
+                                v = bool(v)
+                            values.append(v)
                         placeholders = ', '.join(['%s'] * len(common_cols))
                         cols_str = ', '.join(f'"{c}"' for c in common_cols)
                         try:
