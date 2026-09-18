@@ -149,7 +149,9 @@ def import_sqlite_backup(request):
                 except Exception:
                     pass
 
-            # Pre-fix: set defaults for NOT NULL columns that have NULLs in backup
+            # Find NOT NULL columns with no default — these will cause failures
+            # if SQLite backup has NULL. We skip them during INSERT.
+            skip_notnull = {}  # table -> set of columns to skip
             try:
                 pg_cursor.execute("""
                     SELECT table_name, column_name, data_type
@@ -157,25 +159,14 @@ def import_sqlite_backup(request):
                     WHERE table_schema = 'public'
                       AND is_nullable = 'NO'
                       AND column_default IS NULL
-                      AND table_name IN ('users','orders','payments','audit_logs',
-                        'balance_transactions','token_blacklist_outstandingtoken',
-                        'token_blacklist_blacklistedtoken')
                 """)
                 for tbl, col, dtype in pg_cursor.fetchall():
-                    if dtype == 'boolean':
-                        default_val = 'false'
-                    elif dtype in ('integer','bigint','smallint'):
-                        default_val = '0'
-                    elif 'timestamp' in dtype or 'date' in dtype:
-                        default_val = "'2000-01-01 00:00:00+00'::timestamptz"
-                    elif 'char' in dtype or dtype == 'text' or 'text' in dtype:
-                        default_val = "''"
-                    elif dtype in ('double precision','real','numeric'):
-                        default_val = '0'
-                    else:
+                    if tbl not in skip_notnull:
+                        skip_notnull[tbl] = set()
+                    # Skip auto-managed fields
+                    if col in ('id',):
                         continue
-                    pg_cursor.execute(
-                        f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" SET DEFAULT {default_val}')
+                    skip_notnull[tbl].add(col)
             except Exception:
                 pass
 
@@ -215,6 +206,9 @@ def import_sqlite_backup(request):
                     )
                     pg_columns = {row[0] for row in pg_cursor.fetchall()}
                     common_cols = [c for c in columns if c in pg_columns]
+                    # Remove NOT NULL columns without defaults to avoid insert failures
+                    to_skip = skip_notnull.get(table, set())
+                    common_cols = [c for c in common_cols if c not in to_skip]
 
                     if not common_cols:
                         results[table] = {'rows': count, 'imported': 0, 'status': 'no_common_columns'}
