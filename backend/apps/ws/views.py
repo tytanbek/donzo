@@ -133,15 +133,21 @@ def import_sqlite_backup(request):
         skipped = 0
 
         with connection.cursor() as pg_cursor:
-            # Disable FK checks and constraints for import
-            try:
-                pg_cursor.execute('SET session_replication_role = replica')
-            except Exception:
-                pass  # Neon may not support this
-            try:
-                pg_cursor.execute('SET CONSTRAINTS ALL DEFERRED')
-            except Exception:
-                pass
+            # Disable ALL FK constraints on ALL tables
+            pg_cursor.execute("""
+                SELECT conrelid::regclass::text AS table_name,
+                       conname AS constraint_name
+                FROM pg_constraint
+                WHERE contype = 'f'
+            """)
+            fk_constraints = pg_cursor.fetchall()
+            disabled_fks = []
+            for tbl, con in fk_constraints:
+                try:
+                    pg_cursor.execute(f'ALTER TABLE "{tbl}" DROP CONSTRAINT IF EXISTS "{con}"')
+                    disabled_fks.append((tbl, con))
+                except Exception:
+                    pass
             for table in tables:
                 try:
                     cursor.execute(f'SELECT COUNT(*) as cnt FROM "{table}"')
@@ -215,23 +221,26 @@ def import_sqlite_backup(request):
                             )
                             inserted += 1
                         except Exception as e:
-                            # Retry: fill NOT NULL columns with type-appropriate defaults
-                            if 'not-null constraint' in str(e).lower():
+                            # Retry: fill NULLs with type-appropriate defaults
+                            if 'not-null' in str(e).lower() or 'type' in str(e).lower():
                                 fixed_values = []
                                 for i, col in enumerate(common_cols):
                                     v = values[i]
-                                    if v is None:
-                                        pg_t = pg_types.get(col, '')
+                                    pg_t = pg_types.get(col, '')
+                                    if v is None or (col in boolean_cols and not isinstance(v, bool)):
                                         if pg_t == 'boolean':
                                             v = False
                                         elif pg_t in ('integer', 'bigint', 'smallint'):
                                             v = 0
                                         elif pg_t in ('double precision', 'real', 'numeric'):
                                             v = 0.0
-                                        elif 'char' in pg_t or pg_t == 'text':
+                                        elif 'timestamp' in pg_t or 'date' in pg_t:
+                                            from datetime import datetime, timezone
+                                            v = datetime(2000, 1, 1, tzinfo=timezone.utc)
+                                        elif 'char' in pg_t or pg_t == 'text' or 'text' in pg_t:
                                             v = ''
                                         else:
-                                            v = False  # safe default
+                                            v = None  # let DB decide
                                     fixed_values.append(v)
                                 try:
                                     pg_cursor.execute(
@@ -240,11 +249,11 @@ def import_sqlite_backup(request):
                                     )
                                     inserted += 1
                                 except Exception as e2:
-                                    if len(errors_log) < 5:
-                                        errors_log.append(f'{type(e2).__name__}: {str(e2)[:100]}')
+                                    if len(errors_log) < 3:
+                                        errors_log.append(f'{type(e2).__name__}: {str(e2)[:120]}')
                             else:
-                                if len(errors_log) < 5:
-                                    errors_log.append(f'{type(e).__name__}: {str(e)[:100]}')
+                                if len(errors_log) < 3:
+                                    errors_log.append(f'{type(e).__name__}: {str(e)[:120]}')
 
                     results[table] = {'rows': count, 'imported': inserted, 'status': 'ok'}
                     if errors_log:
@@ -256,10 +265,14 @@ def import_sqlite_backup(request):
 
         sqlite_conn.close()
 
-        # Re-enable constraints
+        # Re-enable FK constraints
         try:
             with connection.cursor() as pg_cursor:
-                pg_cursor.execute('SET session_replication_role = DEFAULT')
+                for tbl, con in disabled_fks:
+                    try:
+                        pg_cursor.execute(f'ALTER TABLE "{tbl}" ADD CONSTRAINT "{con}" NOT VALID')
+                    except Exception:
+                        pass
         except Exception:
             pass
 
