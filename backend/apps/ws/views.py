@@ -149,9 +149,8 @@ def import_sqlite_backup(request):
                 except Exception:
                     pass
 
-            # Find NOT NULL columns with no default — these will cause failures
-            # if SQLite backup has NULL. We skip them during INSERT.
-            skip_notnull = {}  # table -> set of columns to skip
+            # Map NOT NULL columns without defaults to their type defaults
+            notnull_defaults = {}  # {(table, col): default_value}
             try:
                 pg_cursor.execute("""
                     SELECT table_name, column_name, data_type
@@ -161,12 +160,19 @@ def import_sqlite_backup(request):
                       AND column_default IS NULL
                 """)
                 for tbl, col, dtype in pg_cursor.fetchall():
-                    if tbl not in skip_notnull:
-                        skip_notnull[tbl] = set()
-                    # Skip auto-managed fields
-                    if col in ('id',):
+                    if col == 'id':
                         continue
-                    skip_notnull[tbl].add(col)
+                    if dtype == 'boolean':
+                        notnull_defaults[(tbl, col)] = False
+                    elif dtype in ('integer','bigint','smallint'):
+                        notnull_defaults[(tbl, col)] = 0
+                    elif 'timestamp' in dtype or 'date' in dtype:
+                        from datetime import datetime, timezone
+                        notnull_defaults[(tbl, col)] = datetime(2000,1,1,tzinfo=timezone.utc)
+                    elif dtype in ('double precision','real','numeric'):
+                        notnull_defaults[(tbl, col)] = 0.0
+                    elif 'char' in dtype or 'text' in dtype:
+                        notnull_defaults[(tbl, col)] = ''
             except Exception:
                 pass
 
@@ -206,9 +212,6 @@ def import_sqlite_backup(request):
                     )
                     pg_columns = {row[0] for row in pg_cursor.fetchall()}
                     common_cols = [c for c in columns if c in pg_columns]
-                    # Remove NOT NULL columns without defaults to avoid insert failures
-                    to_skip = skip_notnull.get(table, set())
-                    common_cols = [c for c in common_cols if c not in to_skip]
 
                     if not common_cols:
                         results[table] = {'rows': count, 'imported': 0, 'status': 'no_common_columns'}
@@ -236,6 +239,9 @@ def import_sqlite_backup(request):
                             # Convert SQLite integer booleans to Python booleans for PG
                             if col in boolean_cols and isinstance(v, int):
                                 v = bool(v)
+                            # Fill NULL NOT NULL columns with type defaults
+                            if v is None and (table, col) in notnull_defaults:
+                                v = notnull_defaults[(table, col)]
                             values.append(v)
                         placeholders = ', '.join(['%s'] * len(common_cols))
                         cols_str = ', '.join(f'"{c}"' for c in common_cols)
