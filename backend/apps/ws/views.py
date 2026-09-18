@@ -352,6 +352,61 @@ def diag_set(request):
 
 
 @csrf_exempt
+def diag_fix_sequences(request):
+    """Re-align every id sequence with its table's MAX(id).
+
+    The SQLite→Neon restore inserted rows with EXPLICIT ids, which leaves each
+    PostgreSQL sequence at its old value. The next INSERT then reuses an id that
+    already exists and dies with
+    `duplicate key value violates unique constraint "<table>_pkey"` — that is
+    why creating a user, an order, a session or a settings row returned a 500.
+    """
+    if not _diag_authorized(request):
+        return _diag_denied()
+
+    from django.db import connection
+
+    sql = ("""
+        SELECT c.relname, a.attname,
+               pg_get_serial_sequence(quote_ident(c.relname), a.attname)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
+        WHERE c.relkind = 'r' AND n.nspname = current_schema()
+          AND pg_get_serial_sequence(quote_ident(c.relname), a.attname) IS NOT NULL
+        ORDER BY c.relname
+    """)
+    try:
+        with connection.cursor() as cur:
+            cur.execute(sql)
+            targets = cur.fetchall()
+    except Exception as exc:
+        return JsonResponse({'error': f'{type(exc).__name__}: {exc}'}, status=500)
+
+    report, fixed = {}, 0
+    for tbl, col, seq in targets:
+        try:
+            with connection.cursor() as cur:
+                cur.execute(f'SELECT COALESCE(MAX("{col}"), 0) FROM "{tbl}"')
+                mx = int(cur.fetchone()[0] or 0)
+                cur.execute(f'SELECT last_value FROM {seq}')
+                last = int(cur.fetchone()[0])
+            entry = {'max_id': mx, 'seq_last': last, 'drift': mx - last}
+            if mx > 0:
+                with connection.cursor() as cur:
+                    cur.execute('SELECT setval(%s, %s, true)', [seq, mx])
+            else:
+                with connection.cursor() as cur:
+                    cur.execute('SELECT setval(%s, 1, false)', [seq])
+            entry['fixed'] = True
+            fixed += 1
+            report[tbl] = entry
+        except Exception as exc:
+            report[tbl] = {'error': f'{type(exc).__name__}: {str(exc)[:120]}'}
+    return JsonResponse({'tables': len(targets), 'fixed': fixed, 'report': report})
+
+
+@csrf_exempt
 def diag_migrate(request):
     """Run pending Django migrations (was public — now token protected)."""
     if not _diag_authorized(request):

@@ -10,6 +10,7 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from apps.ws.views import (
     health_check, api_root, diag_state, diag_sync_urls, diag_set, diag_migrate,
+    diag_fix_sequences,
 )
 
 # SECURITY: the interactive API schema documents EVERY endpoint including
@@ -70,6 +71,7 @@ urlpatterns = [
     path('internal/diag/sync-urls/', diag_sync_urls, name='diag-sync-urls'),
     path('internal/diag/set/', diag_set, name='diag-set'),
     path('internal/diag/migrate/', diag_migrate, name='diag-migrate'),
+    path('internal/diag/fix-sequences/', diag_fix_sequences, name='diag-fix-sequences'),
     path('api/v1/', include(api_v1_patterns)),
 
 ]
