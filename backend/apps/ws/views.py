@@ -148,6 +148,37 @@ def import_sqlite_backup(request):
                     disabled_fks.append((tbl, con))
                 except Exception:
                     pass
+
+            # Pre-fix: set defaults for NOT NULL columns that have NULLs in backup
+            try:
+                pg_cursor.execute("""
+                    SELECT table_name, column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND is_nullable = 'NO'
+                      AND column_default IS NULL
+                      AND table_name IN ('users','orders','payments','audit_logs',
+                        'balance_transactions','token_blacklist_outstandingtoken',
+                        'token_blacklist_blacklistedtoken')
+                """)
+                for tbl, col, dtype in pg_cursor.fetchall():
+                    if dtype == 'boolean':
+                        default_val = 'false'
+                    elif dtype in ('integer','bigint','smallint'):
+                        default_val = '0'
+                    elif 'timestamp' in dtype or 'date' in dtype:
+                        default_val = "'2000-01-01 00:00:00+00'::timestamptz"
+                    elif 'char' in dtype or dtype == 'text' or 'text' in dtype:
+                        default_val = "''"
+                    elif dtype in ('double precision','real','numeric'):
+                        default_val = '0'
+                    else:
+                        continue
+                    pg_cursor.execute(
+                        f'ALTER TABLE "{tbl}" ALTER COLUMN "{col}" SET DEFAULT {default_val}')
+            except Exception:
+                pass
+
             for table in tables:
                 try:
                     cursor.execute(f'SELECT COUNT(*) as cnt FROM "{table}"')
