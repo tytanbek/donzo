@@ -95,4 +95,6 @@ def run_migrations(request):
         return JsonResponse({'error': str(exc)[:300]}, status=500)
 
 
-
+def ws_metrics(request):
+    """WebSocket metrics placeholder."""
+    return JsonResponse({'metrics': 'not_implemented'})
