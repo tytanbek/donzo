@@ -35,7 +35,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'www.pubgmobile.com', pathname: '/**' },
       { protocol: 'https', hostname: 'cdn.akamai.steamstatic.com', pathname: '/**' },
       { protocol: 'https', hostname: 'donzo-backend-v8oz.onrender.com', pathname: '/**' },
-      { protocol: 'https', hostname: 'donzo-eight.vercel.app', pathname: '/**' },
+      { protocol: 'https', hostname: 'frontend-self-mu-1nb1d09n0h.vercel.app', pathname: '/**' },
     ],
   },
 };

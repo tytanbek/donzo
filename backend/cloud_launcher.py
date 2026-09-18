@@ -370,7 +370,7 @@ def main():
         _env_settings = {
             'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN', ''),
             'telegram_bot_username': os.getenv('TELEGRAM_BOT_USERNAME', 'DONZOROBOT'),
-            'web_app_url': os.getenv('WEB_APP_URL', 'https://donzo.vercel.app'),
+            'web_app_url': os.getenv('WEB_APP_URL', 'https://frontend-self-mu-1nb1d09n0h.vercel.app'),
             'settings_encryption_key': os.getenv('SETTINGS_ENCRYPTION_KEY', ''),
         }
         for key, val in _env_settings.items():
