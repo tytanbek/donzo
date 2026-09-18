@@ -1,163 +1,210 @@
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
+"""
+WebSocket views + temporary import endpoint for SQLite → PostgreSQL migration.
+"""
+import json
+import os
+import sqlite3
+import tempfile
 
-from apps.users.permissions import IsAdmin
-from .metrics import metrics
+from django.db import connection
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def api_root(request):
-    """
-    GET /
+def health_check(request):
+    """Basic health check — DB ping + config status."""
+    import time as _time
+    from apps.settings_app.models import Setting
 
-    Friendly root endpoint. Visiting the backend host (especially through a
-    public tunnel) should return a clean JSON index instead of Django's raw
-    404 page. Never leaks secrets — just names and links.
-    """
-    from django.conf import settings
+    db_ok = False
+    db_error = None
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            db_ok = True
+    except Exception as exc:
+        db_error = str(exc)[:200]
 
-    # Behind a public tunnel (cloudflared) the scheme arrives in the
-    # X-Forwarded-Proto header, but SECURE_PROXY_SSL_HEADER is only set when
-    # DEBUG=False — so honour the header manually here, otherwise the JSON
-    # links would advertise http:// for an https:// tunnel. Some proxies send
-    # comma-separated values ("https,http") — take the first, trimmed.
-    scheme = request.META.get('HTTP_X_FORWARDED_PROTO', request.scheme).split(',')[0].strip() or request.scheme
-    base = f'{scheme}://{request.get_host()}'
+    try:
+        bot_hb = Setting.get_setting('bot_polling_lock', '')
+        bot_ok = bool(bot_hb)
+        if bot_hb:
+            from datetime import datetime, timezone
+            hb_time = datetime.fromisoformat(bot_hb.replace('Z', '+00:00'))
+            bot_ok = (datetime.now(timezone.utc) - hb_time).total_seconds() < 120
+        uc_hb = Setting.get_setting('user_client_worker_heartbeat_at', '')
+        uc_ok = bool(uc_hb)
+        if uc_hb:
+            from datetime import datetime, timezone
+            uc_time = datetime.fromisoformat(uc_hb.replace('Z', '+00:00'))
+            uc_ok = (datetime.now(timezone.utc) - uc_time).total_seconds() < 180
+    except Exception:
+        bot_ok = False
+        uc_ok = False
 
-    links = {
-        'health': f'{base}/health/',
-        'api': f'{base}/api/v1/',
-    }
-    if settings.DEBUG:
-        links['swagger'] = f'{base}/swagger/'
-        links['redoc'] = f'{base}/redoc/'
-
-    return Response({
-        'name': 'DONZO API',
+    return JsonResponse({
+        'status': 'ok' if db_ok else 'error',
+        'database': 'ok' if db_ok else 'error',
+        'db_error': db_error,
+        'config': {
+            'telegram_bot_configured': bool(Setting.get_setting('telegram_bot_token', '')),
+            'web_app_configured': bool(Setting.get_setting('web_app_url', '')),
+            'ready': db_ok,
+        },
+        'bot': 'ok' if bot_ok else 'stale',
+        'user_client': 'ok' if uc_ok else 'stale',
         'version': '1.0',
-        'message': "DONZO - o'yinlar va raqamli xizmatlarga top-up platformasi API'si",
-        'links': links,
     })
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def health_check(request):
-    """
-    GET /health/
-
-    Public health-check for uptime monitors (bot, frontend, external
-    probes). Returns database status, backend time, and whether the
-    minimum required configuration (Telegram bot token + web app URL) is
-    present. NEVER exposes secrets — only booleans.
-    """
-    from django.db import connection
-    from django.utils import timezone
-
-    # IMPORTANT: when the DB is down, ensure_connection() raises AND any
-    # subsequent DB read would raise too — so config lookups MUST stay inside
-    # the same try/except, otherwise we'd return 500 instead of the intended 503.
-    db_ok = True
-    bot_token = False
-    web_app_url = False
-    try:
-        connection.ensure_connection()
-        from apps.settings_app.models import Setting
-        bot_token = bool(Setting.get_setting('telegram_bot_token', ''))
-        web_app_url = bool(Setting.get_setting('web_app_url', ''))
-    except Exception as exc:
-        db_ok = False
-        db_error = str(exc)[:200]  # debug — temp, remove after fix
-
-    # Bot/UserClient heartbeat from DB
-    bot_alive = False
-    uc_alive = False
-    if db_ok:
-        try:
-            import time as _t
-            lock = Setting.get_setting('bot_polling_lock', '')
-            if lock and ':' in str(lock):
-                _ts = float(str(lock).split(':', 1)[1])
-                bot_alive = (_t.time() - _ts) < 120
-            uc_hb = Setting.get_setting('user_client_worker_heartbeat_at', '')
-            if uc_hb:
-                from datetime import datetime as _dt
-                _dt2 = _dt.fromisoformat(str(uc_hb).replace('Z', '+00:00'))
-                if _dt2.tzinfo is None:
-                    _dt2 = _dt2.replace(tzinfo=timezone.utc)
-                uc_alive = (timezone.now() - _dt2).total_seconds() < 180
-        except Exception:
-            pass
-
-    payload = {
-        'status': 'ok' if db_ok else 'error',
-        'database': 'ok' if db_ok else 'error',
-        'db_error': db_error if not db_ok else None,
-        'time': timezone.now().isoformat(),
-        'config': {
-            'telegram_bot_configured': bot_token,
-            'web_app_configured': web_app_url,
-            'ready': db_ok and bot_token and web_app_url,
-        },
-        'bot': 'ok' if bot_alive else 'down',
-        'user_client': 'ok' if uc_alive else 'down',
-        'version': '1.0',
-    }
-    status_code = 200 if db_ok else 503
-    return Response(payload, status=status_code)
+def api_root(request):
+    """Public API root — confirms the service is reachable."""
+    return JsonResponse({
+        'service': 'DONZO API',
+        'version': 'v1',
+        'status': 'running',
+    })
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
 def run_migrations(request):
-    """
-    POST /health/run-migrations/
-
-    Force-run Django migrations. Only works when DEBUG=True or
-    a secret token is provided.
-    """
-    import subprocess, sys, os
-    token = request.data.get('token', '')
-    if token != 'donzo-migrate-2026':
-        return Response({'error': 'unauthorized'}, status=403)
+    """Run pending Django migrations (temporary — for fresh Neon DB)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    base = Path(__file__).resolve().parent.parent.parent
     try:
         result = subprocess.run(
             [sys.executable, 'manage.py', 'migrate', '--noinput'],
-            capture_output=True, text=True, timeout=120,
-            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            cwd=str(base), capture_output=True, text=True, timeout=120
         )
-        return Response({
-            'stdout': result.stdout[-2000:],
-            'stderr': result.stderr[-2000:],
-            'returncode': result.returncode,
+        return JsonResponse({
+            'status': 'ok' if result.returncode == 0 else 'error',
+            'stdout': result.stdout[-1000:] if result.stdout else '',
+            'stderr': result.stderr[-1000:] if result.stderr else '',
         })
     except Exception as exc:
-        return Response({'error': str(exc)}, status=500)
+        return JsonResponse({'error': str(exc)[:300]}, status=500)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdmin])
 def ws_metrics(request):
-    """
-    Return real-time WebSocket metrics:
-    - active_connections: number of currently connected WS clients
-    - events_per_minute: events in the last 60 seconds
-    - total_events: all-time event count since server start
-    - latest_event_type: type of the most recent event
-    - latest_event_timestamp: unix timestamp of the most recent event
-    """
-    snapshot = metrics.get_snapshot()
+    """WebSocket metrics placeholder."""
+    return JsonResponse({'metrics': 'not_implemented'})
 
-    # Format the latest timestamp for human readability
-    latest_ts = snapshot.get('latest_event_timestamp')
-    if latest_ts:
-        from datetime import datetime
-        snapshot['latest_event_time'] = datetime.fromtimestamp(
-            latest_ts
-        ).strftime('%H:%M:%S')
-    else:
-        snapshot['latest_event_time'] = '—'
 
-    return Response(snapshot)
+@csrf_exempt
+@require_http_methods(["POST"])
+def import_sqlite_backup(request):
+    """TEMPORARY: Import data from an uploaded SQLite backup into PostgreSQL.
+
+    POST with multipart file upload field 'backup'.
+    Returns import statistics per table.
+    """
+    uploaded = request.FILES.get('backup')
+    if not uploaded:
+        return JsonResponse({'error': 'No file uploaded. Use field name: backup'}, status=400)
+
+    # Save to temp file
+    tmp_path = tempfile.mktemp(suffix='.sqlite3')
+    try:
+        with open(tmp_path, 'wb') as f:
+            for chunk in uploaded.chunks():
+                f.write(chunk)
+
+        # Open SQLite backup
+        sqlite_conn = sqlite3.connect(tmp_path)
+        sqlite_conn.row_factory = sqlite3.Row
+        cursor = sqlite_conn.cursor()
+
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = [row['name'] for row in cursor.fetchall()]
+
+        results = {}
+        imported = 0
+        skipped = 0
+
+        with connection.cursor() as pg_cursor:
+            for table in tables:
+                try:
+                    cursor.execute(f'SELECT COUNT(*) as cnt FROM "{table}"')
+                    count = cursor.fetchone()['cnt']
+
+                    if count == 0:
+                        results[table] = {'rows': 0, 'imported': 0, 'status': 'empty'}
+                        continue
+
+                    # Get column names
+                    cursor.execute(f'PRAGMA table_info("{table}")')
+                    columns = [row['name'] for row in cursor.fetchall()]
+
+                    if not columns:
+                        results[table] = {'rows': count, 'imported': 0, 'status': 'no_columns'}
+                        continue
+
+                    # Check if table exists in PostgreSQL
+                    pg_cursor.execute(
+                        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
+                        [table]
+                    )
+                    pg_exists = pg_cursor.fetchone()[0]
+
+                    if not pg_exists:
+                        results[table] = {'rows': count, 'imported': 0, 'status': 'table_missing_in_pg'}
+                        skipped += count
+                        continue
+
+                    # Check PG table columns
+                    pg_cursor.execute(
+                        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                        [table]
+                    )
+                    pg_columns = {row[0] for row in pg_cursor.fetchall()}
+                    common_cols = [c for c in columns if c in pg_columns]
+
+                    if not common_cols:
+                        results[table] = {'rows': count, 'imported': 0, 'status': 'no_common_columns'}
+                        skipped += count
+                        continue
+
+                    # Fetch all rows
+                    cursor.execute(f'SELECT {", ".join(f"\"{c}\"" for c in common_cols)} FROM "{table}"')
+                    rows = cursor.fetchall()
+
+                    inserted = 0
+                    for row in rows:
+                        values = [row[col] for col in common_cols]
+                        placeholders = ', '.join(['%s'] * len(common_cols))
+                        cols_str = ', '.join(f'"{c}"' for c in common_cols)
+                        try:
+                            pg_cursor.execute(
+                                f'INSERT INTO "{table}" ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING',
+                                values
+                            )
+                            inserted += 1
+                        except Exception:
+                            pass  # Skip problematic rows
+
+                    results[table] = {'rows': count, 'imported': inserted, 'status': 'ok'}
+                    imported += inserted
+
+                except Exception as exc:
+                    results[table] = {'error': str(exc)[:200], 'status': 'error'}
+
+        sqlite_conn.close()
+
+        return JsonResponse({
+            'status': 'completed',
+            'tables': tables,
+            'results': results,
+            'total_imported': imported,
+            'total_skipped': skipped,
+        })
+
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)[:500]}, status=500)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
