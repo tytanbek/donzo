@@ -64,6 +64,8 @@ _WRITABLE_KEYS = frozenset({
     # possible from here too — a revoked session otherwise crash-loops the card
     # monitor (AuthKeyDuplicatedError) with no way to remove it.
     'user_client_session_b64',
+    # AI tone switch (gentle/angry/strict) — same key staff_ai._get_ai_mode reads.
+    'staff_ai_angry_mode',
 })
 _WRITABLE_PREFIXES = ('marketing_', 'payment_')
 

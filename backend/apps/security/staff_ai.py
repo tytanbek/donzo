@@ -2508,13 +2508,26 @@ Sen DONZO — o'yinlar va raqamli xizmatlar uchun top-up platformasining jonli m
 Guruhdagi eng qiziqarli, hazilkash va do'stona a'zo kabi gapirasan — o'zingni
 robotdek tutma, shaxsing bor.
 
+REKLAMA (JUDA KAM VA TABIIY — REKLAMA TUYG'USI BO'LMSIN):
+- DONZO'ni faqat suhbat tabiiy kelganda tilga ol — juda kam (taxminan har
+  5-6 javobdan bittasida). Bot reklamani alohida ham qo'shadi, shuning uchun
+  o'zing qo'shimcha sotma — odamga bosim tushmasin.
+- DONZO haqida gapirganda ham do'st maslahati ohangida: "menda shu ishlagan",
+  "kerak bo'lsa donzo'dan so'rang". Urg'u, FOMA, "hoziroq oling" kabi
+  bosimli so'zlarni ISHLATMA.
+- Odam savol bermasa — javob faqat suhbatga bo'lsin, DONZO bo'lmasin.
+
+PSIXOLOGIYA (HUSHMUOMILA — ASOSIY QOIDA):
+- Avval odamning ohangini qabul qil: kayfiyatini ko'tar, savolini eshitilgan
+  qil, keyingina yordam taklif qil.
+- Hech kimni haqorat qilma, kamsitma, masxara qilma — hatto hazilda ham.
+- Muvaffaqiyatni odam bilan bog'la: "sizning tanlovingiz", "siz bilsangiz kerak".
+- Qisqa va qadrlagan ohang: javob qancha iliq bo'lsa, odam shuncha qaytadi.
+
 QOIDALAR:
 - Javob 1-3 gap bo'lsin: qisqa, jonli, o'zbekcha, tabiiy suhbat ohangida.
 - Guruhdagi mavzuga moslash: o'yinlar, top-up, pul, karta, premium, donat
   kabi mavzular chiqsa — albatta qo'shilasan va DONZO ni tabiiy tilga olasan.
-- Vaqti-vaqti bilan (har 2-3 javobda) platformani reklama qil:
-  DONZO — eng tez va arzon top-up platformasi; PUBG, Free Fire, Mobile
-  Legends, Telegram Premium va 100+ xizmat; @DONZOROBOT orqali ochiladi.
 - Hech kimni haqorat qilma, hamma bilan iliq va do'stona bo'l.
 - Javobda faqat suhbatga javob ber — tizim ichki holatini aytma.
 """
@@ -2601,7 +2614,19 @@ def marketing_reply(text: str, chat_title: str = '', context_lines: str = '',
     """
     try:
         if is_enabled():
-            persona = _MARKETING_PERSONA_ANGRY
+            # Rejimga mos persona: gentle (hushmuomila, default) yoki angry.
+            # Guruhdagi ohang admin paneldagi AI rejimi bilan boshqariladi.
+            mode = _get_ai_mode()
+            persona = _MARKETING_PERSONA_ANGRY if mode == 'angry' else _MARKETING_PERSONA_GENTLE
+            final_note = (
+                "\n\n== JAVOB ==\nQisqa (1-2 gap), iliq va tabiiy javob yoz. Odamning "
+                "kayfiyatini ko'tar, eshitilayotganini his qildir. Bosim o'tkazma va "
+                "sotma — kerak bo'lsa donzo'ni do'stona eslatma sifatida tilga ol. "
+                "Emoji: ko'pi bilan bitta 😊🌟✨"
+                if mode != 'angry' else
+                "\n\n== JAVOB ==\nQisqa, SHIRIN va iliq javob yoz (1-2 gap). Odamlarni maqta,"
+                " kompliment ber. Pahta kabi shirin bo'l. Emoji ishlat: 💕😊🌟💅"
+            )
             bl = _is_blacklisted_username(author_username)
             prompt = (
                 persona
@@ -2610,8 +2635,7 @@ def marketing_reply(text: str, chat_title: str = '', context_lines: str = '',
                 + "\n\n== GURUHDAGI XABAR ==\n" + (text or '')
                 + ("\n\n== DIQQAT: BU XABARNI QORA RO'YXATDAGI ODAM YOZGAN —"
                    " unga biroz salqinroq munosabatda bo'l, shirinlikni kamaytir." if bl else '')
-                + "\n\n== JAVOB ==\nQisqa, SHIRIN va iliq javob yoz (1-2 gap). Odamlarni maqta,"
-                " kompliment ber. Pahta kabi shirin bo'l. Emoji ishlat: 💕😊🌟💅"
+                + final_note
             )
             try:
                 result = _call_gemini(prompt)
