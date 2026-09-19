@@ -443,3 +443,420 @@ body {
 .amount-chip.active {
   box-shadow: 0 0 24px rgba(0, 245, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   LIQUID GLASS v2 — iOS 26-style optically reactive glass
+   (dynamic specular highlights, depth parallax, spring feel)
+   Appended on top of the v1 system — additive only.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Design tokens ─── */
+:root {
+  --lg-glass-bg: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.045) 45%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  --lg-glass-border: rgba(255, 255, 255, 0.14);
+  --lg-glass-blur: 28px;
+  --lg-specular: rgba(255, 255, 255, 0.35);
+  --lg-spring: cubic-bezier(0.34, 1.3, 0.5, 1);
+  --lg-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* ─── Core surface: the iOS 26 "lensing" glass ───
+   Layered element = faint white body + pointer-tracked specular
+   highlight + crisp inner edge. Reads like backlit glass. */
+.lg-glass {
+  position: relative;
+  background: var(--lg-glass-bg);
+  backdrop-filter: blur(var(--lg-glass-blur)) saturate(1.8);
+  -webkit-backdrop-filter: blur(var(--lg-glass-blur)) saturate(1.8);
+  border: 1px solid var(--lg-glass-border);
+  border-radius: 24px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 var(--lg-specular),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.5s var(--lg-spring),
+    box-shadow 0.5s var(--lg-ease),
+    border-color 0.4s ease;
+  overflow: hidden;
+}
+
+/* Specular sweep — light refracting through glass.
+   --mx/--my CSS vars are optionally updated by pointer tracking;
+   without JS the highlight rests at a fixed pleasing angle. */
+.lg-glass::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(
+    420px circle at var(--mx, 30%) var(--my, 0%),
+    rgba(255, 255, 255, 0.09),
+    transparent 65%
+  );
+  opacity: var(--lg-lit, 0);
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lg-glass:hover { --lg-lit: 1; }
+
+/* Real children stack above the highlight layer */
+.lg-glass > * { position: relative; z-index: 1; }
+
+.lg-glass:active {
+  transform: scale(0.985);
+  transition-duration: 0.12s;
+}
+
+/* ─── Glass buttons (primary / soft) — springy liquid press ─── */
+.lg-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  color: #061018;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.95), rgba(59, 130, 246, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 10px 30px rgba(0, 229, 255, 0.32),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 6px rgba(0, 40, 70, 0.25);
+  transition: all 0.45s var(--lg-spring);
+  overflow: hidden;
+}
+
+.lg-btn::after {
+  /* moving sheen on hover */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  transform: skewX(-18deg);
+  transition: left 0.6s var(--lg-ease);
+}
+
+.lg-btn:hover::after { left: 120%; }
+
+.lg-btn:hover {
+  transform: translateY(-1.5px) scale(1.015);
+  box-shadow:
+    0 16px 44px rgba(0, 229, 255, 0.45),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 6px rgba(0, 40, 70, 0.2);
+}
+
+.lg-btn:active {
+  transform: scale(0.96);
+  transition-duration: 0.1s;
+}
+
+.lg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.lg-btn-soft {
+  color: #F1F5F9;
+  background: var(--lg-glass-bg);
+  border: 1px solid var(--lg-glass-border);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 var(--lg-specular);
+}
+
+.lg-btn-soft:hover {
+  border-color: rgba(0, 229, 255, 0.4);
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 var(--lg-specular),
+    0 0 24px rgba(0, 229, 255, 0.12);
+}
+
+/* ─── Floating capsule bar (summary + CTA) — true iOS glass ─── */
+.lg-capsule {
+  position: sticky;
+  bottom: calc(76px + var(--safe-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px 12px 18px;
+  border-radius: 26px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.09),
+    rgba(255, 255, 255, 0.035)
+  );
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 16px 44px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Warning card (insufficient balance) — glass, amber-tinted ─── */
+.lg-warn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.14),
+    rgba(251, 191, 36, 0.05)
+  );
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.lg-warn-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  border-radius: 13px;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.lg-warn-title {
+  color: #FDE68A;
+  font-weight: 700;
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+
+.lg-warn-sub {
+  color: #A8B3C7;
+  font-size: 12px;
+ margin-top: 2px;
+}
+
+.lg-warn-btn {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #0B0F1A;
+  background: linear-gradient(135deg, #FBBF24, #F59E0B);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 8px 22px rgba(251, 191, 36, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: all 0.35s var(--lg-spring);
+  white-space: nowrap;
+}
+
+.lg-warn-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow:
+    0 12px 28px rgba(251, 191, 36, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ─── Glass inputs — iOS 26 focus "lift" ─── */
+.lg-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 13px 16px;
+  color: #F8FAFC;
+  /* 16px = iOS Safari focus zoomini qo'zg'amaydi (responsivlik) */
+  font-size: 16px;
+  line-height: 1.4;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lg-input::placeholder { color: #64748B; }
+
+.lg-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 229, 255, 0.55);
+  box-shadow:
+    0 0 0 4px rgba(0, 229, 255, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ─── Responsive hardening (mobil / tablet / desktop) ─── */
+@media (max-width: 360px) {
+  .lg-capsule { gap: 8px; padding: 10px 12px 10px 14px; border-radius: 22px; }
+  .lg-btn { padding: 11px 18px; font-size: 13px; }
+}
+
+@media (max-width: 640px) {
+  .service-float-label,
+  .service-float-price {
+    max-width: 46vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .service-float-label,
+  .service-float-price { max-width: 300px; }
+}
+
+/* Katta ekranlarda karta kontenti nafas oladi */
+@media (min-width: 1024px) {
+  .lg-glass { border-radius: 28px; }
+}
+
+/* ─── iOS-specific glass tuning ─── */
+@supports (-webkit-touch-callout: none) {
+  /* Safari iOS: heavy blur + saturate is GPU-costly on long pages —
+     soften to keep scroll at 60fps without losing the look. */
+  .lg-glass,
+  .lg-capsule {
+    backdrop-filter: blur(24px) saturate(1.6);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  }
+
+  /* iOS'da tap highlightni olib tashlash — glass press allaqachon bor */
+  .lg-btn, .lg-glass, .lg-warn-btn { -webkit-tap-highlight-color: transparent; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GLOBAL SURFACE OVERRIDES — butun ilova bitta iOS 26 tilga o'tadi
+   (bu qatlam fayl oxirida: xuddi shu spesifiklikda keyingi qoida yutadi)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* .glass-card — iOS 26 oq-shisha linza (v1 to'q ko'k o'rniga) */
+.glass-card {
+  background: var(--lg-glass-bg);
+  backdrop-filter: blur(var(--lg-glass-blur)) saturate(1.8);
+  -webkit-backdrop-filter: blur(var(--lg-glass-blur)) saturate(1.8);
+  border: 1px solid var(--lg-glass-border);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 var(--lg-specular),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 16px 52px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 1px rgba(0, 229, 255, 0.08);
+}
+
+/* .glass-input — oq shisha + 16px (iOS Safari focus zoomi yo'q) */
+.glass-input {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 16px;
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 229, 255, 0.55);
+  box-shadow:
+    0 0 0 4px rgba(0, 229, 255, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Suzuvchi buyurtma paneli — haqiqiy iOS kapsula shishasi */
+.service-float-bar {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.04)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow:
+    0 16px 44px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* O'yin kartalari — yengil oq shisha qatlam */
+.game-card {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.03)
+  );
+  backdrop-filter: blur(26px) saturate(1.6);
+  -webkit-backdrop-filter: blur(26px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.game-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* Header / bottom-nav — bir xil oq-shisha oila */
+.mini-header {
+  background: rgba(255, 255, 255, 0.055) !important;
+  backdrop-filter: blur(36px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(1.8) !important;
+}
+
+.bottom-nav-shell {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(36px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(1.8) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.balance-badge {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}

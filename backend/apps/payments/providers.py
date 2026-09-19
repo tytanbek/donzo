@@ -29,6 +29,20 @@ class PaymentProviderError(Exception):
     pass
 
 
+class InsufficientBalanceError(PaymentProviderError):
+    """Machine-readable signal: balance can't cover the order.
+
+    The API layer maps this to HTTP 400 with `code: 'insufficient_balance'
+    so clients can show a targeted 'top up' prompt instead of a generic
+    error. Amounts are included so the client can render exact numbers.
+    """
+
+    def __init__(self, message, balance=None, required=None):
+        super().__init__(message)
+        self.balance = balance
+        self.required = required
+
+
 class BaseProvider(ABC):
     """Abstract base class for payment providers."""
 
@@ -105,9 +119,11 @@ class BalanceProvider(BaseProvider):
                 raise PaymentProviderError("Hisobingiz bloklangan, to'lov amalga oshirilmadi")
 
             if customer.balance < order.total_price:
-                raise PaymentProviderError(
+                raise InsufficientBalanceError(
                     f"Balansda yetarli mablag' mavjud emas. "
-                    f"Mavjud: {customer.balance} so'm, Kerak: {order.total_price} so'm"
+                    f"Mavjud: {customer.balance} so'm, Kerak: {order.total_price} so'm",
+                    balance=customer.balance,
+                    required=order.total_price,
                 )
 
             transaction_id = f"BAL{order.id}{uuid.uuid4().hex[:8].upper()}"

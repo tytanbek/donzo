@@ -208,6 +208,18 @@ export default function ServiceDetailPage() {
       return;
     }
 
+    // UX + xavfsizlik: balans yetmasa darhol aniq xabar — backend ham 400
+    // qaytaradi, lekin foydalanuvchi bosishdan OLDIN natijani bilishi kerak.
+    const needAmount = Number(createdOrder?.total_price ?? selectedPackage?.price ?? 0);
+    const haveAmount = Number(user?.balance || 0);
+    if (selectedProvider === 'balance' && haveAmount < needAmount) {
+      toast.error(
+        `Balansda yetarli mablag' mavjud emas. Mavjud: ${haveAmount.toLocaleString()} so'm, Kerak: ${needAmount.toLocaleString()} so'm`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     setIsPaying(true);
     try {
       const res = await paymentAPI.init({
@@ -396,11 +408,36 @@ export default function ServiceDetailPage() {
               />
             </div>
 
+            {/* Insufficient balance — clear, actionable warning (iOS glass) */}
+            {selectedProvider === 'balance' &&
+              Number(user?.balance || 0) <
+                Number(createdOrder?.total_price ?? selectedPackage?.price ?? 0) && (
+              <div className="lg-warn mb-4">
+                <div className="lg-warn-icon" aria-hidden>⚠️</div>
+                <div className="min-w-0 flex-1">
+                  <p className="lg-warn-title">Balansda yetarli mablag' mavjud emas</p>
+                  <p className="lg-warn-sub">
+                    Mavjud: {Number(user?.balance || 0).toLocaleString()} so'm · Kerak:{' '}
+                    {Number(createdOrder?.total_price ?? selectedPackage?.price ?? 0).toLocaleString()} so'm
+                  </p>
+                </div>
+                <Link href="/balance" className="lg-warn-btn">
+                  To'ldirish
+                </Link>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="flex flex-col gap-3">
               <button
                 onClick={handlePay}
-                disabled={isPaying || !selectedProvider}
+                disabled={
+                  isPaying ||
+                  !selectedProvider ||
+                  (selectedProvider === 'balance' &&
+                    Number(user?.balance || 0) <
+                      Number(createdOrder?.total_price ?? selectedPackage?.price ?? 0))
+                }
                 className="service-float-btn w-full justify-center !py-4 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPaying ? (

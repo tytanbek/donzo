@@ -5,7 +5,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from .models import Payment
 from .serializers import PaymentInitSerializer, PaymentSerializer
-from .providers import PaymentProviderFactory, PaymentProviderError
+from .providers import (
+    PaymentProviderFactory,
+    PaymentProviderError,
+    InsufficientBalanceError,
+)
 from apps.orders.models import Order
 from apps.settings_app.models import SiteSetting
 
@@ -74,6 +78,18 @@ class PaymentInitView(generics.GenericAPIView):
 
         try:
             result = provider.init_payment(order, settings)
+        except InsufficientBalanceError as e:
+            # Machine-readable insufficient-balance response: the client shows
+            # a targeted "top up" prompt with exact amounts (never a generic 500).
+            return Response(
+                {
+                    'detail': str(e),
+                    'code': 'insufficient_balance',
+                    'balance': str(e.balance) if e.balance is not None else None,
+                    'required': str(e.required) if e.required is not None else None,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except PaymentProviderError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
