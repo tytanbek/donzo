@@ -145,7 +145,29 @@ export default function ServiceDetailPage() {
       }
     });
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const errorCount = Object.keys(errors).length;
+    // Muhim UX: xatolar sahifa yuqorisidagi inputlar ostida ko'rsatiladi —
+    // pastdagi suzuvchi tugmani bosgan foydalanuvchi ularni ko'rmaydi va
+    // "tugma ishlamayapti" deb o'ylaydi. Toast + avtomatik scroll bilan
+    // birinchi xatoni ko'rsatamiz.
+    if (errorCount > 0) {
+      const firstMsg =
+        errors.customerName ||
+        errors.customerTelegram ||
+        (service?.fields || [])
+          .filter((f: any) => errors[f.field_name])
+          .map((f: any) => errors[f.field_name])[0] ||
+        'Iltimos, barcha majburiy maydonlarni to\'ldiring';
+      toast.error(firstMsg, { duration: 4000 });
+      setTimeout(() => {
+        document.querySelector('.glass-input.error')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 50);
+      return false;
+    }
+    return true;
   };
 
   const handleSubmitOrder = async () => {

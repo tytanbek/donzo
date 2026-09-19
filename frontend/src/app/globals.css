@@ -1684,7 +1684,10 @@ body {
 .service-float-bar {
   position: sticky;
   bottom: 84px;
-  z-index: 40;
+  /* FloatingSupport (Telegram FAB) ham z-40 va DOM'da keyin keladi —
+     ustma-ush tushgan joyda u buyurtma tugmasining klikini yutib olardi.
+     Bu bar doim ustida turishi kerak. */
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: space-between;
