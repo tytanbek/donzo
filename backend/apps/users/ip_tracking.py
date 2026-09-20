@@ -37,11 +37,15 @@ MAX_TELEGRAM_LEN = 3500
 
 
 def _client_ip(request) -> str:
-    """Client IP (Cloudflare → Render zanjirida chap tomon — haqiqiy mijoz)."""
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.split(',')[0].strip()[:45]
-    return (request.META.get('REMOTE_ADDR', '') or '')[:45]
+    """Ishonchli client IP (apps.security.net — XFF spoofing'ga qarshi).
+
+    XFF ning chap tomoni mijoz tomonidan yozilishi mumkin: u holda
+    firibgar o'z kirishlarini boshqa IP'ga yozdirib, "bir IP — bir nechta
+    akkaunt" tekshiruvini yo'q qilardi.
+    """
+    from apps.security.net import client_ip
+
+    return client_ip(request)
 
 
 def is_public_ip(ip: str) -> bool:

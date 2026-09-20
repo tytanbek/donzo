@@ -134,8 +134,11 @@ class BruteForceProtectionMiddleware:
         return response
     
     def _get_client_ip(self, request):
-        """Get real client IP from X-Forwarded-For (Render proxy)."""
-        xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-        if xff:
-            return xff.split(',')[0].strip()[:45]
-        return request.META.get('REMOTE_ADDR', '')[:45]
+        """Ishonchli client IP (apps.security.net — XFF spoofing'ga qarshi).
+
+        Ilgari bu yerda XFF ning CHAP tomoni olinardi va mijoz uni o'zi
+        yozib yuborib, blokirovkani chetlab o'ta olardi.
+        """
+        from .net import client_ip
+
+        return client_ip(request)

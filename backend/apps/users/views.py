@@ -159,11 +159,17 @@ def _report_login_error(kind: str, error_code: str, username: str = ''):
 
 
 def _client_ip(request) -> str:
-    """Client IP (XFF chap tomoni) — faqat sessiya metadata uchun."""
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.split(',')[0].strip()[:45]
-    return request.META.get('REMOTE_ADDR', '')[:45]
+    """Ishonchli client IP (anti-fraud metadata + brute-force uchun).
+
+    MUHIM: ilgari XFF ning CHAP tomoni olinardi — mijoz o'sha sarlavhani
+    o'zi yozib yuborib, brute-force blokirovkasini chetlab o'tishi va
+    anti-fraud IP xaritasini buzishi mumkin edi (pen-test bilan tasdiqlangan).
+    Endi ishonchli proksi zanjiri qo'shgan oxirgi qiymat olinadi —
+    DRF throttle bilan bir xil mantiq (apps.security.net).
+    """
+    from apps.security.net import client_ip
+
+    return client_ip(request)
 
 
 def _capture_login_meta(user, request):

@@ -31,6 +31,51 @@ class FakeRequest:
         }
 
 
+class ClientIPSpoofTests(TestCase):
+    """X-Forwarded-For spoofing: brute-force va anti-fraud IP ishonchli bo'lsin.
+
+    Pen-test aniq ko'rsatdi: XFF ning chap tomoni mijoz tomonidan yozilsa,
+    login blokirovkasi chetlab o'tilardi (haqiqiy IP 429, spoof 403).
+    Endi ishonchli proksi qo'shgan OXIRGI qiymat olinadi.
+    """
+
+    def test_rightmost_entry_is_used(self):
+        from apps.security.net import client_ip
+
+        req = FakeRequest()
+        req.META['HTTP_X_FORWARDED_FOR'] = '1.2.3.4, 213.230.93.180'
+        self.assertEqual(client_ip(req), '213.230.93.180')
+
+    def test_single_entry_still_works(self):
+        from apps.security.net import client_ip
+
+        req = FakeRequest()
+        req.META['HTTP_X_FORWARDED_FOR'] = '213.230.93.180'
+        self.assertEqual(client_ip(req), '213.230.93.180')
+
+    def test_rem_addr_fallback(self):
+        from apps.security.net import client_ip
+
+        req = FakeRequest()
+        req.META.pop('HTTP_X_FORWARDED_FOR')
+        req.META['REMOTE_ADDR'] = '213.230.93.180'
+        self.assertEqual(client_ip(req), '213.230.93.180')
+
+    def test_spoofed_prefix_cannot_change_identity(self):
+        from apps.users.ip_tracking import record_login_ip
+
+        user = User.objects.create_user(
+            username='spoof_user', email='spoof@test.local', telegram_id='9000010',
+        )
+        req = FakeRequest()
+        req.META['HTTP_X_FORWARDED_FOR'] = '198.51.100.7, 213.230.93.180'
+        record_login_ip(user, req)
+        self.assertTrue(
+            LoginIPMap.objects.filter(user=user, ip_address='213.230.93.180').exists(),
+            'spoof qilingan IP emas, ishonchli IP yozilishi kerak',
+        )
+
+
 class PublicIPTests(TestCase):
     def test_private_and_loopback_are_not_tracked(self):
         for ip in ['127.0.0.1', '10.0.0.5', '192.168.1.7', '::1', '172.16.4.4', '', 'nope']:
