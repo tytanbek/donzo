@@ -271,6 +271,10 @@ export const fieldAPI = {
 };
 
 // Orders
+/** Mutlaq API manzili (auto-login fallback bazasi ham hisobga olinadi).
+ * Masalan CSV yuklab olish havolasini yasashda ishlatiladi. */
+export const apiUrl = (path: string) => `${effectiveBase()}${path}`;
+
 export const orderAPI = {
   create: (data: any) => api.post('/orders/', data),
   list: (params?: any) => api.get('/orders/my/', { params }),
@@ -280,6 +284,10 @@ export const orderAPI = {
   adminDetail: (id: number) => api.get(`/admin/orders/${id}/`),
   availableOrders: () => api.get('/admin/orders/available/'),
   acceptOrder: (id: number) => api.post(`/admin/orders/${id}/accept/`),
+  // Brauzer yuklab olishi uchun 2 daqiqalik imzolangan havola
+  // (admin JWT endi URL'da ko'chib yurmaydi — xavfsizlik).
+  exportLink: (params?: { status?: string; date_from?: string; date_to?: string }) =>
+    api.post('/export/orders/link/', params || {}),
 };
 
 // Telegram Premium/Stars orders — admin confirm/reject flow.
@@ -440,6 +448,9 @@ export const securityAPI = {
   profileAction: (userId: number, action: string) =>
     api.post(`/admin/security/profiles/${userId}/${action}/`, {}),
   settings: () => api.get('/admin/security/settings/'),
+  // Bir IP'dan kirgan bir nechta akkauntlar (multi-account anti-fraud)
+  sharedIps: (params?: { min?: number }) =>
+    api.get('/admin/security/shared-ips/', { params }),
   updateSettings: (data: any) => api.put('/admin/security/settings/', data),
   copilot: (question: string) => api.post('/admin/security/copilot/', { question }),
 };

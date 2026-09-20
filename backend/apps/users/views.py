@@ -199,6 +199,15 @@ def _capture_login_meta(user, request):
         user.last_user_agent = user.last_user_agent or (request.META.get('HTTP_USER_AGENT', '') or '')[:500]
         user.last_seen_at = timezone.now()
         user.save(update_fields=['last_ip', 'last_ip_location', 'last_location', 'last_user_agent', 'last_seen_at', 'geo_lat', 'geo_lng', 'geo_source'])
+
+        # Anti-fraud: bir IP'dan bir nechta akkaunt kirsa adminni ogohlantiramiz.
+        # Xato bo'lsa ham login oqimi davom etadi (modul o'zi yutadi).
+        try:
+            from .ip_tracking import record_login_ip
+
+            record_login_ip(user, request)
+        except Exception:
+            logger.exception('[SharedIP] hook xatosi (ahamiyatsiz)')
         return label
     except Exception:
         logger.exception('Login meta yozishda xato (ahamiyatsiz)')

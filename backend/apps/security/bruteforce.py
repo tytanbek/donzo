@@ -1,13 +1,21 @@
 """
-Brute-force protection middleware — DB-backed, multi-worker safe.
+Brute-force protection middleware — login urinishlarini IP bo'yicha cheklaydi.
 
-Tracks failed login attempts per IP in the database. Unlike cache-based
-throttling, this works across ALL worker processes on Render.
+Qoplaydi:
+  • API login endpointlari (initdata-login, fragment-login, login-code, demo)
+  • Django admin login formasi (/admin/login/) — xato javob ham 200 bo'lgani
+    uchun alohida hisoblanadi
 
 Flow:
-  1. Request hits login endpoint
-  2. If IP has 20+ failures in last 15 minutes → 429 Too Many Requests
-  3. On successful login → clear failure count for that IP
+  1. So'rov login endpoint'iga keladi
+  2. IP'da 20+ muvaffaqiyatsiz urinish (15 daqiqada) → 429, 15 daqiqa blok
+  3. Muvaffaqiyatli kirishda hisoblagich tozalanadi
+
+DIQQAT (cheklov): hisoblagich Django cache'ida (LocMemCache) saqlanadi —
+bu bitta daphne process uchun to'g'ri ishlaydi (hozirgi deploy shunday).
+Agar kelajakda bir nechta worker ishga tushsa, hisoblagichni umumiy
+saqlash joyi (Redis yoki DB) ga ko'chirish shart — aks holda cheklov
+worker'lar bo'ylab bo'linib ketadi.
 """
 import time
 import logging
@@ -30,6 +38,12 @@ PROTECTED_ENDPOINTS = [
     '/api/v1/auth/demo-login/',
 ]
 
+# Django admin login form. MUHIM: admin login xatosi ham HTTP 200 qaytaradi
+# (forma qayta chiziladi), shuning uchun bu yo'lda 200 = muvaffaqiyatsiz
+# urinish deb hisoblanadi. Aks holda /admin/login/ ochiq brute-force
+# maydoniga aylanib qolardi.
+ADMIN_LOGIN_PREFIX = '/admin/login'
+
 
 class BruteForceProtectionMiddleware:
     """
@@ -45,8 +59,12 @@ class BruteForceProtectionMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        is_admin_login = request.path.startswith(ADMIN_LOGIN_PREFIX)
+
         # Only protect login endpoints
-        if not any(request.path.startswith(ep) for ep in PROTECTED_ENDPOINTS):
+        if not is_admin_login and not any(
+            request.path.startswith(ep) for ep in PROTECTED_ENDPOINTS
+        ):
             return self.get_response(request)
         
         # Only protect POST requests (login attempts)
@@ -62,6 +80,14 @@ class BruteForceProtectionMiddleware:
             lockout_key = f'bf_lock_{ip}'
             if cache.get(lockout_key):
                 logger.warning('[BruteForce] IP %s locked out', ip)
+                if is_admin_login:
+                    from django.http import HttpResponse
+                    return HttpResponse(
+                        '<h1>429 — Juda ko\'p urinish</h1>'
+                        '<p>15 daqiqadan keyin qayta urinib ko\'ring.</p>',
+                        status=429,
+                        content_type='text/html; charset=utf-8',
+                    )
                 return JsonResponse(
                     {'detail': "Juda ko'p urinish. 15 daqiqa kutib qayta urinib ko'ring."},
                     status=429
@@ -71,9 +97,18 @@ class BruteForceProtectionMiddleware:
         
         # Process the request
         response = self.get_response(request)
+
+        # Admin login: 200 = forma xato bilan qayta chizildi (muvaffaqiyatsiz),
+        # 302 = muvaffaqiyatli kirish.
+        if is_admin_login:
+            failed = response.status_code == 200
+            succeeded = response.status_code in (301, 302)
+        else:
+            failed = response.status_code in (400, 401, 403)
+            succeeded = response.status_code == 200
         
         # If login failed (400, 401, 403), increment failure count
-        if response.status_code in (400, 401, 403):
+        if failed:
             try:
                 failures = cache.get(cache_key) or 0
                 failures += 1
@@ -89,8 +124,8 @@ class BruteForceProtectionMiddleware:
             except Exception:
                 pass  # Fail-open if cache fails
         
-        # If login succeeded (200), clear failure count
-        elif response.status_code == 200:
+        # If login succeeded, clear failure count
+        elif succeeded:
             try:
                 cache.delete(cache_key)
             except Exception:

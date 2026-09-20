@@ -3,12 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiSearch, FiFilter, FiRefreshCw, FiChevronDown, FiEye, FiDownload } from 'react-icons/fi';
-import { orderAPI } from '@/lib/api';
+import { orderAPI, apiUrl } from '@/lib/api';
 import OrderStatus from '@/components/OrderStatus';
 import OrderDetailModal from '@/components/OrderDetailModal';
 import toast from 'react-hot-toast';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 const statusOptions = ['all', 'pending', 'processing', 'completed', 'cancelled'];
 
@@ -64,10 +62,19 @@ export default function AdminOrdersPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              const token = localStorage.getItem('access_token');
-              const url = `${API_BASE}/export/orders/csv/token/?token=${token}&status=${statusFilter !== 'all' ? statusFilter : ''}`;
-              window.open(url, '_blank');
+            onClick={async () => {
+              // XAVFSIZLIK: admin JWT endi URL'da yuborilmaydi. Backend 2
+              // daqiqalik bir martalik imzolangan havola qaytaradi.
+              try {
+                const res = await orderAPI.exportLink({
+                  status: statusFilter !== 'all' ? statusFilter : '',
+                });
+                const path = res.data?.url;
+                if (!path) throw new Error('havola yo\'q');
+                window.open(apiUrl(path), '_blank');
+              } catch {
+                toast.error("CSV havolasini olib bo'lmadi — qayta urinib ko'ring");
+              }
             }}
             className="glow-btn-outline flex items-center gap-2 px-4 py-2 text-sm"
             title="CSV eksport"

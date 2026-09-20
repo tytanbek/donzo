@@ -303,6 +303,33 @@ class SecuritySettingsView(APIView):
         return self.get(request)
 
 
+class SharedIPView(APIView):
+    """GET /api/v1/admin/security/shared-ips/ — bir IP, bir nechta akkaunt.
+
+    Anti-fraud: qaysi IP manzildan bir nechta akkaunt kirganini ko'rsatadi
+    (promokod/bonus suiiste'moli va bloklangan akkauntni chetlab o'tish
+    signali). Ma'lumot LoginIPMap'dan olinadi — har login'da yangilanadi.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
+
+    def get(self, request):
+        from apps.users.ip_tracking import shared_ip_clusters
+
+        try:
+            min_accounts = max(2, int(request.query_params.get('min', 2)))
+        except (TypeError, ValueError):
+            min_accounts = 2
+
+        clusters = shared_ip_clusters(min_accounts=min_accounts)
+        return Response({
+            'count': len(clusters),
+            'clusters': clusters,
+        })
+
+
 class AiCopilotView(APIView):
     """
     POST /api/v1/admin/security/copilot/  {"question": "..."}

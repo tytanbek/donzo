@@ -76,6 +76,14 @@ urlpatterns = [
 
 ]
 
+# ── Xato handlerlari: API har doim JSON qaytaradi ──
+# HTML "Server Error (500)" sahifasi ham ishonchsiz ko'rinadi, ham
+# foydalanuvchiga texnik ma'lumot beradi. Traceback faqat serverga yoziladi.
+handler400 = 'config.views.bad_request'
+handler403 = 'config.views.permission_denied'
+handler404 = 'config.views.page_not_found'
+handler500 = 'config.views.server_error'
+
 # Swagger/ReDoc only in DEBUG (production never exposes the API schema).
 if settings.DEBUG and schema_view is not None:
     urlpatterns += [

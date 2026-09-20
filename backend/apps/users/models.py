@@ -243,6 +243,44 @@ class ReferralReward(models.Model):
         return f"@{self.referrer.username} milestone {self.milestone} -> {self.reward_label}"
 
 
+class LoginIPMap(models.Model):
+    """IP ↔ akkaunt xaritasi (anti-fraud).
+
+    Har bir muvaffaqiyatli kirishda (initData / bot kodi / fragment) shu IP
+    manzil va akkaunt juftligi yoziladi. Bir IP'dan bir nechta BOSHQA akkaunt
+    kirgani aniqlansa — admin darhol Telegram orqali ogohlantiriladi
+    ("multi-account" / shared-IP signali).
+
+    Nega kerak: kartali to'lovlarda firibgarlar bitta qurilmadan bir nechta
+    akkaunt ochib, bonus/promokod/chegirmalarni qayta ishlatadi yoki bir
+    akkaunt bloklangan bo'lsa boshqasidan kirib oladi.
+    """
+    ip_address = models.CharField(max_length=45, db_index=True)
+    user = models.ForeignKey(
+        'users.User', on_delete=models.CASCADE, related_name='ip_logins'
+    )
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    login_count = models.PositiveIntegerField(default=1)
+    device = models.CharField(max_length=500, blank=True, default='')
+    platform = models.CharField(max_length=100, blank=True, default='')
+    location = models.CharField(max_length=200, blank=True, default='')
+    # Oxirgi marta qachon shu IP/akkaunt uchun admin ogohlantirilgan
+    alerted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'login_ip_map'
+        # (ip_address, user) unique indeksi IP bo'yicha qidiruvni ham
+        # tezlashtiradi — alohida indeks kerak emas.
+        unique_together = [('ip_address', 'user')]
+        ordering = ['-last_seen_at']
+        verbose_name = 'Login IP map'
+        verbose_name_plural = 'Login IP map'
+
+    def __str__(self):
+        return f'{self.ip_address} → @{self.user.username} ({self.login_count}x)'
+
+
 class PremiumActivationCode(models.Model):
     """Premium activation code — generated when a user hits 30 referrals.
 

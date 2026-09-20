@@ -11,6 +11,7 @@ urlpatterns = [
     path('security/cases/<int:pk>/<str:action>/', views.CaseActionView.as_view(), name='admin-security-case-action'),
     path('security/profiles/', views.UserRiskProfileView.as_view(), name='admin-security-profiles'),
     path('security/profiles/<int:user_id>/<str:action>/', views.UserRiskActionView.as_view(), name='admin-security-profile-action'),
+    path('security/shared-ips/', views.SharedIPView.as_view(), name='admin-security-shared-ips'),
     path('security/settings/', views.SecuritySettingsView.as_view(), name='admin-security-settings'),
     path('security/copilot/', views.AiCopilotView.as_view(), name='admin-security-copilot'),
 ]

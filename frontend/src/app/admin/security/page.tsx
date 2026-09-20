@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiShield, FiAlertTriangle, FiCheckCircle, FiXCircle, FiClock, FiUser,
   FiSettings, FiActivity, FiLock, FiMessageSquare, FiSend, FiRefreshCw,
-  FiEye, FiEyeOff, FiFolder, FiCpu, FiSearch, FiZap, FiPauseCircle
+  FiEye, FiEyeOff, FiFolder, FiCpu, FiSearch, FiZap, FiPauseCircle, FiUsers, FiMapPin
 } from 'react-icons/fi';
 import { securityAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -55,6 +55,7 @@ export default function AdminSecurityPage() {
   const [copilotQ, setCopilotQ] = useState('');
   const [copilotChat, setCopilotChat] = useState<any[]>([]);
   const [copilotBusy, setCopilotBusy] = useState(false);
+  const [sharedIps, setSharedIps] = useState<any[]>([]);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const loadDashboard = useCallback(async () => {
@@ -88,6 +89,16 @@ export default function AdminSecurityPage() {
     try { setSettings((await securityAPI.settings()).data); } catch { /* ignore */ }
   }, []);
 
+  // Anti-fraud: bir IP'dan kirgan bir nechta akkauntlar (multi-account).
+  // Har 30 sekundlik avtomatik yangilanishga qo'shilmaydi — endpoint
+  // admin throttle'ida, shuning uchun faqat tab ochilganda/qo'lda yangilanadi.
+  const loadSharedIps = useCallback(async () => {
+    try {
+      const r = await securityAPI.sharedIps();
+      setSharedIps(r.data.clusters || []);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     loadDashboard();
     const t = setInterval(loadDashboard, 30000);
@@ -95,12 +106,12 @@ export default function AdminSecurityPage() {
   }, [loadDashboard]);
 
   useEffect(() => {
-    if (tab === 'dashboard') loadDashboard();
+    if (tab === 'dashboard') { loadDashboard(); loadSharedIps(); }
     if (tab === 'incidents') loadIncidents();
     if (tab === 'cases') loadCases();
     if (tab === 'profiles') loadProfiles();
     if (tab === 'settings') loadSettings();
-  }, [tab, loadIncidents, loadCases, loadProfiles, loadSettings, loadDashboard]);
+  }, [tab, loadIncidents, loadCases, loadProfiles, loadSettings, loadDashboard, loadSharedIps]);
 
   const incidentAction = async (id: number, action: string) => {
     setActingId(id);
@@ -222,6 +233,70 @@ export default function AdminSecurityPage() {
                     <p className="text-[10px] text-[#64748B] mt-0.5">{c.label}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* ═══ Bir IP — bir nechta akkaunt (multi-account anti-fraud) ═══ */}
+              <div className="glass-card p-5 mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <FiUsers className="w-4 h-4 text-amber-400" /> Bir IP — bir nechta akkaunt
+                    {sharedIps.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold">
+                        {sharedIps.length}
+                      </span>
+                    )}
+                  </h2>
+                  <button onClick={loadSharedIps} className="glow-btn-outline flex items-center gap-2 px-3 py-1.5 text-xs">
+                    <FiRefreshCw className="w-3.5 h-3.5" /> Yangilash
+                  </button>
+                </div>
+
+                {sharedIps.length === 0 ? (
+                  <p className="text-xs text-[#64748B]">
+                    Shubhali holat yo'q — hozircha har bir IP manzil bitta akkauntga tegishli.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {sharedIps.slice(0, 5).map((c: any) => (
+                      <div key={c.ip_address} className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3.5">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                          <span className="font-mono text-xs text-amber-300">{c.ip_address}</span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold">
+                            {c.accounts_count} akkaunt
+                          </span>
+                          {c.location && (
+                            <span className="text-[10px] text-[#64748B] flex items-center gap-1">
+                              <FiMapPin className="w-3 h-3" /> {c.location}
+                            </span>
+                          )}
+                          {c.last_seen_at && (
+                            <span className="text-[10px] text-[#64748B]">
+                              oxirgi kirish: {new Date(c.last_seen_at).toLocaleString('uz-UZ')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1">
+                          {(c.accounts || []).map((a: any) => (
+                            <span key={a.user_id} className="text-[11px] text-[#94A3B8] flex flex-wrap items-center gap-1.5">
+                              <span className="text-white font-medium">@{a.username}</span>
+                              <span className="font-mono text-[10px] text-[#64748B]">ID {a.telegram_id || '—'}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] uppercase">{a.role}</span>
+                              <span className="text-[10px] text-[#64748B]">{a.login_count}x kirgan</span>
+                              {a.is_blacklisted && (
+                                <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[9px] font-bold">BLOKLANGAN</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {sharedIps.length > 5 && (
+                      <p className="text-[11px] text-[#64748B]">
+                        Yana {sharedIps.length - 5} ta IP — eng oxirgi 5 tasi ko'rsatilgan.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid lg:grid-cols-2 gap-6">
