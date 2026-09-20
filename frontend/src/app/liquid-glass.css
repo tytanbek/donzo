@@ -898,77 +898,91 @@ body {
   --ios-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ios-fluid: cubic-bezier(0.32, 0.72, 0, 1);
   --ios-snap: cubic-bezier(0.2, 0.9, 0.1, 1);
-  --lgx-glass-tint: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.085),
-    rgba(255, 255, 255, 0.035) 55%,
-    rgba(255, 255, 255, 0.018)
-  );
 }
 
-/* ─── 3. MATERIAL — linza + tap glint ───────────────────────────
-   Har bir shisha yuza uch qatlamli: (a) kursorni kuzatuvchi yorug'
-   linza, (b) bosilgan nuqtada bir zum yonib o'chadigan glint,
-   (c) iOS 26 ning oq-shisha asosi. Qatlamlar `background-image`
-   orqali — pseudo-element qo'shmaymiz, shuning uchun mavjud
-   ::before/::after (mini-card, game-card) buzilmaydi. */
+/* ─── 3. MATERIAL — faqat HARAKAT (dizayn o'zgarmaydi) ─────────────
+   Mavjud shisha yuzalarga yorug'lik harakati qo'shiladi:
+     (a) linza  — kursor/barmoq qayerda bo'lsa, yorug' nuqta o'sha yerda
+     (b) glint  — bosilgan nuqtada bir zum yonib o'chadigan dog'
+   Ikkala qatlam ham tinch holatda BUTUNLAY shaffof (--lgx-lit=0,
+   --lgx-glint=0), shuning uchun sahifa avvalgidek ko'rinadi.
+   Oxirgi qatlam — elementning hozirgi (o'zgarmagan) foni.
+   Pseudo-element qo'shmaymiz: mavjud ::before/::after buzilmaydi. */
 .glass-card,
 .mini-card,
 .mini-panel,
 .game-card,
 .lg-capsule,
-.lg-btn-soft {
-  background-image:
-    radial-gradient(
-      300px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
-      rgba(255, 255, 255, calc(0.15 * var(--lgx-lit, 0))),
-      transparent 62%
-    ),
-    radial-gradient(
-      200px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
-      rgba(255, 255, 255, calc(0.24 * var(--lgx-glint, 0))),
-      transparent 68%
-    ),
-    var(--lgx-glass-tint);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
-    0 12px 34px -14px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(26px) saturate(1.8);
-  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+.lg-btn-soft,
+.lg-warn,
+.balance-badge,
+.bottom-nav-indicator {
+  --lgx-lens: radial-gradient(
+    300px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
+    rgba(255, 255, 255, calc(0.16 * var(--lgx-lit, 0))),
+    transparent 62%
+  );
+  --lgx-spark: radial-gradient(
+    200px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
+    rgba(255, 255, 255, calc(0.24 * var(--lgx-glint, 0))),
+    transparent 68%
+  );
 }
 
-/* O'z tusini saqlab qoladigan yuza: amber ogohlantirish */
+/* Asl fonlar aynan ko'chirildi — dizayn bir piksel ham o'zgarmasin */
+.glass-card,
+.lg-btn-soft {
+  background-image: var(--lgx-lens), var(--lgx-spark), var(--lg-glass-bg);
+}
+
+.mini-card {
+  background-image:
+    var(--lgx-lens),
+    var(--lgx-spark),
+    linear-gradient(180deg, rgba(18, 26, 44, 0.86) 0%, rgba(9, 14, 28, 0.94) 100%) !important;
+}
+
+.mini-panel {
+  background-image:
+    var(--lgx-lens),
+    var(--lgx-spark),
+    linear-gradient(180deg, rgba(23, 31, 47, 0.85), rgba(17, 24, 39, 0.8));
+}
+
+.game-card {
+  background-image:
+    var(--lgx-lens),
+    var(--lgx-spark),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.lg-capsule {
+  background-image:
+    var(--lgx-lens),
+    var(--lgx-spark),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+}
+
+/* Amber ogohlantirish — asl amber gradienti saqlanadi */
 .lg-warn {
   background-image:
-    radial-gradient(
-      260px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
-      rgba(255, 255, 255, calc(0.20 * var(--lgx-lit, 0))),
-      transparent 62%
-    ),
-    radial-gradient(
-      190px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
-      rgba(255, 255, 255, calc(0.26 * var(--lgx-glint, 0))),
-      transparent 68%
-    ),
+    var(--lgx-lens),
+    var(--lgx-spark),
     linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.05));
 }
 
-/* Balans belgisi va pastki nav indikatori — fon ranglari saqlanadi,
-   ustiga faqat linza/glint qatlami qo'shiladi. */
-.balance-badge,
+/* Balans belgisi — asl rang (background-color) daxlsiz qoladi,
+   ustiga faqat yorug'lik qatlamlari qo'shiladi. */
+.balance-badge {
+  background-image: var(--lgx-lens), var(--lgx-spark) !important;
+}
+
+/* Pastki nav indikatori — asl gradient + yorug'lik qatlamlari */
 .bottom-nav-indicator {
   background-image:
-    radial-gradient(
-      180px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
-      rgba(255, 255, 255, calc(0.18 * var(--lgx-lit, 0))),
-      transparent 60%
-    ),
-    radial-gradient(
-      140px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
-      rgba(255, 255, 255, calc(0.22 * var(--lgx-glint, 0))),
-      transparent 65%
-    );
+    var(--lgx-lens),
+    var(--lgx-spark),
+    linear-gradient(135deg, rgba(0, 245, 255, 0.12), rgba(168, 85, 247, 0.1)) !important;
 }
 
 /* Linza/glint qatlamlarining silliq yonishi */
@@ -990,6 +1004,18 @@ body {
     border-color 300ms ease,
     background-color 300ms ease,
     opacity 300ms ease;
+}
+
+/* .mini-card'ning o'z transition'i `!important` bilan yozilgan —
+   bahor animatsiyasi ishlashi uchun uni ham `!important` bilan
+   almashtiramiz (xossalar ro'yxati o'sha-o'sha + `scale`). */
+.mini-card {
+  transition:
+    scale 420ms var(--ios-spring),
+    transform 420ms var(--ios-spring),
+    box-shadow 300ms ease,
+    border-color 300ms ease,
+    opacity 300ms ease !important;
 }
 
 /* Bosilgan nuqtadan glint yonib o'chadi (iOS 26 tap harakati) */
@@ -1018,11 +1044,9 @@ body {
 }
 
 .cyber-grid::before {
-  background:
-    radial-gradient(ellipse at 20% 50%, rgba(0, 245, 255, 0.10) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.09) 0%, transparent 52%),
-    radial-gradient(ellipse at 50% 85%, rgba(45, 212, 191, 0.07) 0%, transparent 55%),
-    radial-gradient(ellipse at 70% 70%, rgba(255, 215, 0, 0.045) 0%, transparent 50%);
+  /* Ranglar (dizayn) tegilmaydi — faqat sekin drift animatsiyasi
+     qo'shiladi. Blur ostidagi fon qimirlagani uchun shisha "tirik"
+     ko'rinadi. Faqat transform/opacity — GPU'da qoladi. */
   animation: lgx-aurora 38s ease-in-out infinite alternate;
   will-change: transform, opacity;
 }
@@ -1072,21 +1096,6 @@ body {
   transform: none;
 }
 
-/* Kursorli qurilmalarda hover ohangi (iOS 26 "rim light") */
-@media (hover: hover) and (pointer: fine) {
-  .glass-card:hover,
-  .mini-card:hover,
-  .game-card:hover,
-  .mini-panel:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
-      0 18px 46px -18px rgba(0, 0, 0, 0.7),
-      0 0 26px rgba(255, 255, 255, 0.05);
-  }
-}
-
 /* ─── 5. NAV — prujinali indikator + ikonka pop ─────────────── */
 .bottom-nav-indicator {
   transition: left 520ms var(--ios-spring), width 520ms var(--ios-spring) !important;
@@ -1111,12 +1120,9 @@ body {
   translate: 0 -1px;
 }
 
-/* ─── 6. HEADER — skrollga bog'langan material ──────────────── */
+/* ─── 6. HEADER — skrollga bog'langan yumshoq soya ───────────── */
 .mini-header {
-  transition:
-    background-color 320ms var(--ios-fluid),
-    box-shadow 320ms ease,
-    border-color 320ms ease;
+  transition: box-shadow 320ms ease, border-color 320ms ease;
 }
 
 /* Fokus ostidagi yumshoq soya: kontent shisha ostidan "eriydi" */
@@ -1140,21 +1146,8 @@ body {
   opacity: 1;
 }
 
-.mini-header.is-scrolled {
-  background: rgba(9, 13, 24, 0.86) !important;
-  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow:
-    0 10px 34px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-}
-
-.mini-header .mini-header-inner {
-  transition: padding-top 300ms var(--ios-fluid);
-}
-
-.mini-header.is-scrolled .mini-header-inner {
-  padding-top: 0;
-}
+/* Eslatma: header rang/materiali o'zgarmaydi — faqat ostidagi yumshoq
+   soya pardasi paydo bo'ladi (::after) va logo biroz kichrayadi. */
 
 /* ─── 7. SHEET / MODAL — iOS taqdimoti ────────────────────────
    JS (IosMotion) yangi paydo bo'lgan `fixed inset-0` qatlamlarga
@@ -1216,16 +1209,14 @@ body {
   animation: lgx-page-in 440ms var(--ios-spring) both !important;
 }
 
-/* Toast (react-hot-toast) — iOS 26 shisha banneri */
-[data-rht-toaster] [role='status'] {
-  border-radius: 20px !important;
-  background: rgba(12, 18, 32, 0.74) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  backdrop-filter: blur(26px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(26px) saturate(1.8) !important;
-  box-shadow:
-    0 20px 48px -16px rgba(0, 0, 0, 0.75),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+/* ─── 8b. Kichik iOS detallari (faqat harakat) ───────────────── */
+/* "Large title" yig'ilishi: skroll paytida logo biroz kichrayadi */
+.mini-logo-icon {
+  transition: scale 320ms var(--ios-fluid);
+}
+
+.mini-header.is-scrolled .mini-logo-icon {
+  scale: 0.94;
 }
 
 /* ─── 9. TOUCH GIGIYENA ────────────────────────────────────────
@@ -1262,16 +1253,6 @@ a,
 
 /* ─── iOS'da blur byudjeti: 60fps uchun yumshatish ──────────── */
 @supports (-webkit-touch-callout: none) {
-  .glass-card,
-  .mini-card,
-  .mini-panel,
-  .game-card,
-  .lg-capsule,
-  .lg-btn-soft {
-    backdrop-filter: blur(22px) saturate(1.6);
-    -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  }
-
   .mini-header::after {
     backdrop-filter: blur(5px) saturate(1.3);
     -webkit-backdrop-filter: blur(5px) saturate(1.3);
