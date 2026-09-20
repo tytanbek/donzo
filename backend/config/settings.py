@@ -276,6 +276,11 @@ else:
 
 # REST Framework
 REST_FRAMEWORK = {
+    # DRF throttle identifikatori ham ishonchli proksi zanjiriga tayansin.
+    # Bu sozlama berilmasa DRF butun `X-Forwarded-For` qiymatini ident sifatida
+    # oladi — mijoz uni o'zi yozib, har so'rovda boshqa "ident" ko'rsatib,
+    # throttleni butunlay chetlab o'tishi mumkin edi (pen-test bilan tasdiqlangan).
+    'NUM_PROXIES': NUM_PROXIES,
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
