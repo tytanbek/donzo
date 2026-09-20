@@ -860,3 +860,443 @@ body {
   background: rgba(255, 255, 255, 0.08) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v3 — iOS 26 "LIQUID GLASS" · MOTION ENGINE
+   ---------------------------------------------------------------
+   Maqsad: iPhone foydalanuvchisi Mini App'ni emas, iOS'ning o'zini
+   ishlatayotgandek his qilsin. Bu qatlam additive — v1/v2 materiallar
+   saqlanadi, ustiga iOS 26 harakati qo'shiladi.
+
+     1) @property — sonli animatsiya qilinadigan CSS o'zgaruvchilar
+     2) Apple spring tokenlari (UIKit egri chiziqlari)
+     3) Material: barmoq/sichqoncha kuzatuvchi linza + tap glint
+     4) Press: iOS pressable — siqilish, qo'yib yuborilganda prujina
+     5) Nav: prujinali indikator + ikonka "pop"
+     6) Header: skrollga bog'langan material + fokus ostidagi yumshoq soya
+     7) Sheet/Modal: iOS taqdimoti (orqada blur "gullashi")
+     8) Sahifa o'tishi va toastlar
+     9) Touch gigiyena + prefers-reduced-motion hurmati
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Sonli o'zgaruvchilar — gradientlarning shaffofligini silliq
+   animatsiya qilish uchun ro'yxatga olinadi (iOS 16.4+). */
+@property --lgx-lit {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+
+@property --lgx-glint {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+
+:root {
+  /* UIKit egri chiziqlari: prujinali (overshoot), oqimli, tez */
+  --ios-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ios-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+  --ios-snap: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --lgx-glass-tint: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.085),
+    rgba(255, 255, 255, 0.035) 55%,
+    rgba(255, 255, 255, 0.018)
+  );
+}
+
+/* ─── 3. MATERIAL — linza + tap glint ───────────────────────────
+   Har bir shisha yuza uch qatlamli: (a) kursorni kuzatuvchi yorug'
+   linza, (b) bosilgan nuqtada bir zum yonib o'chadigan glint,
+   (c) iOS 26 ning oq-shisha asosi. Qatlamlar `background-image`
+   orqali — pseudo-element qo'shmaymiz, shuning uchun mavjud
+   ::before/::after (mini-card, game-card) buzilmaydi. */
+.glass-card,
+.mini-card,
+.mini-panel,
+.game-card,
+.lg-capsule,
+.lg-btn-soft {
+  background-image:
+    radial-gradient(
+      300px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
+      rgba(255, 255, 255, calc(0.15 * var(--lgx-lit, 0))),
+      transparent 62%
+    ),
+    radial-gradient(
+      200px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
+      rgba(255, 255, 255, calc(0.24 * var(--lgx-glint, 0))),
+      transparent 68%
+    ),
+    var(--lgx-glass-tint);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 12px 34px -14px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(26px) saturate(1.8);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+}
+
+/* O'z tusini saqlab qoladigan yuza: amber ogohlantirish */
+.lg-warn {
+  background-image:
+    radial-gradient(
+      260px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
+      rgba(255, 255, 255, calc(0.20 * var(--lgx-lit, 0))),
+      transparent 62%
+    ),
+    radial-gradient(
+      190px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
+      rgba(255, 255, 255, calc(0.26 * var(--lgx-glint, 0))),
+      transparent 68%
+    ),
+    linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.05));
+}
+
+/* Balans belgisi va pastki nav indikatori — fon ranglari saqlanadi,
+   ustiga faqat linza/glint qatlami qo'shiladi. */
+.balance-badge,
+.bottom-nav-indicator {
+  background-image:
+    radial-gradient(
+      180px circle at var(--lgx-mx, 50%) var(--lgx-my, -25%),
+      rgba(255, 255, 255, calc(0.18 * var(--lgx-lit, 0))),
+      transparent 60%
+    ),
+    radial-gradient(
+      140px circle at var(--lgx-tx, 50%) var(--lgx-ty, 50%),
+      rgba(255, 255, 255, calc(0.22 * var(--lgx-glint, 0))),
+      transparent 65%
+    );
+}
+
+/* Linza/glint qatlamlarining silliq yonishi */
+.glass-card,
+.mini-card,
+.mini-panel,
+.game-card,
+.lg-capsule,
+.lg-btn-soft,
+.lg-warn,
+.balance-badge,
+.bottom-nav-indicator {
+  transition:
+    --lgx-lit 420ms ease,
+    --lgx-glint 620ms var(--ios-fluid),
+    scale 420ms var(--ios-spring),
+    transform 420ms var(--ios-spring),
+    box-shadow 300ms ease,
+    border-color 300ms ease,
+    background-color 300ms ease,
+    opacity 300ms ease;
+}
+
+/* Bosilgan nuqtadan glint yonib o'chadi (iOS 26 tap harakati) */
+@keyframes lgx-glint-run {
+  0% { --lgx-glint: 1; }
+  45% { --lgx-glint: 0.6; }
+  100% { --lgx-glint: 0; }
+}
+
+/* ─── Fon "nur pardasi" (aurora) — shisha ortida sekin nafas oladi.
+   Blur ostidagi fon harakatlangani uchun shisha "tirik" ko'rinadi.
+   Faqat transform/opacity — GPU'da qoladi, 60fps saqlanadi. */
+@keyframes lgx-aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(-2.5%, 1.5%, 0) scale(1.07);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(2.5%, -1.5%, 0) scale(1.03);
+    opacity: 0.9;
+  }
+}
+
+.cyber-grid::before {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(0, 245, 255, 0.10) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.09) 0%, transparent 52%),
+    radial-gradient(ellipse at 50% 85%, rgba(45, 212, 191, 0.07) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 70%, rgba(255, 215, 0, 0.045) 0%, transparent 50%);
+  animation: lgx-aurora 38s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+.lgx-tap {
+  animation: lgx-glint-run 640ms var(--ios-fluid) both;
+}
+
+/* ─── 4. PRESS — iOS pressable ────────────────────────────────
+   `scale` mustaqil xossa bo'lgani uchun mavjud hover transformlari
+   (`translateY(-2px)`) bilan to'qnashmaydi — ikkalasi birga ishlaydi. */
+.glass-card,
+.mini-card,
+.game-card,
+.mini-panel,
+.lg-capsule,
+.lg-btn,
+.lg-btn-soft,
+.lg-warn-btn,
+.glow-btn,
+.pill-btn,
+.amount-chip,
+.balance-step,
+.nav-item,
+.bottom-nav-indicator {
+  transition:
+    scale 420ms var(--ios-spring),
+    transform 420ms var(--ios-spring),
+    box-shadow 300ms ease,
+    border-color 300ms ease,
+    background-color 300ms ease,
+    color 250ms ease,
+    opacity 300ms ease;
+}
+
+.lgx-press {
+  scale: 0.968;
+  transition: scale 110ms var(--ios-snap) !important;
+}
+
+.nav-item.lgx-press {
+  scale: 0.9;
+}
+
+/* Karta ichidagi ":active" ikki marta siqilmasin — manba bitta bo'lsin */
+.mini-card:active {
+  transform: none;
+}
+
+/* Kursorli qurilmalarda hover ohangi (iOS 26 "rim light") */
+@media (hover: hover) and (pointer: fine) {
+  .glass-card:hover,
+  .mini-card:hover,
+  .game-card:hover,
+  .mini-panel:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+      0 18px 46px -18px rgba(0, 0, 0, 0.7),
+      0 0 26px rgba(255, 255, 255, 0.05);
+  }
+}
+
+/* ─── 5. NAV — prujinali indikator + ikonka pop ─────────────── */
+.bottom-nav-indicator {
+  transition: left 520ms var(--ios-spring), width 520ms var(--ios-spring) !important;
+}
+
+@keyframes lgx-icon-pop {
+  0% { scale: 0.78; }
+  55% { scale: 1.16; }
+  100% { scale: 1; }
+}
+
+.nav-item.active .nav-icon {
+  animation: lgx-icon-pop 520ms var(--ios-spring) both;
+}
+
+.nav-item .nav-label {
+  transition: opacity 260ms ease, translate 420ms var(--ios-spring), color 250ms ease;
+}
+
+.nav-item.active .nav-label {
+  opacity: 1;
+  translate: 0 -1px;
+}
+
+/* ─── 6. HEADER — skrollga bog'langan material ──────────────── */
+.mini-header {
+  transition:
+    background-color 320ms var(--ios-fluid),
+    box-shadow 320ms ease,
+    border-color 320ms ease;
+}
+
+/* Fokus ostidagi yumshoq soya: kontent shisha ostidan "eriydi" */
+.mini-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -18px;
+  height: 18px;
+  backdrop-filter: blur(7px) saturate(1.4);
+  -webkit-backdrop-filter: blur(7px) saturate(1.4);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1), transparent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.mini-header.is-scrolled::after {
+  opacity: 1;
+}
+
+.mini-header.is-scrolled {
+  background: rgba(9, 13, 24, 0.86) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.mini-header .mini-header-inner {
+  transition: padding-top 300ms var(--ios-fluid);
+}
+
+.mini-header.is-scrolled .mini-header-inner {
+  padding-top: 0;
+}
+
+/* ─── 7. SHEET / MODAL — iOS taqdimoti ────────────────────────
+   JS (IosMotion) yangi paydo bo'lgan `fixed inset-0` qatlamlarga
+   `lgx-overlay-enter` sinfini qo'yadi. */
+@keyframes lgx-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lgx-panel-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes lgx-sheet-in {
+  from { opacity: 0; transform: translateY(64px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Orqa fon "gullashi": blur bir zum kuchayib, so'ng barqaror holatga
+   qaytadi — yakuniy ko'rinish o'zgarmaydi (100% da opacity 0). */
+@keyframes lgx-backdrop-bloom {
+  0% { opacity: 0; }
+  55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.lgx-overlay-enter {
+  animation: lgx-overlay-in 300ms var(--ios-fluid) both;
+}
+
+.lgx-overlay-enter::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  animation: lgx-backdrop-bloom 420ms ease-out both;
+  pointer-events: none;
+}
+
+.lgx-panel-enter {
+  animation: lgx-panel-in 440ms var(--ios-spring) both;
+  transform-origin: center;
+}
+
+.lgx-sheet-panel {
+  animation: lgx-sheet-in 500ms var(--ios-spring) both;
+  transform-origin: bottom center;
+}
+
+/* ─── 8. SAHIFA O'TISHI + TOASTLAR ─────────────────────────── */
+@keyframes lgx-page-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.994); }
+  to { opacity: 1; transform: none; }
+}
+
+.mini-page {
+  animation: lgx-page-in 440ms var(--ios-spring) both !important;
+}
+
+/* Toast (react-hot-toast) — iOS 26 shisha banneri */
+[data-rht-toaster] [role='status'] {
+  border-radius: 20px !important;
+  background: rgba(12, 18, 32, 0.74) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(26px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(1.8) !important;
+  box-shadow:
+    0 20px 48px -16px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+/* ─── 9. TOUCH GIGIYENA ────────────────────────────────────────
+   iOS'da bosilganda kulrang "tap highlight" chiqmasin (bizning
+   glint/press animatsiyamiz o'rnini bosadi) va ikki marta bosish
+   zoomi o'chirilsin. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+[role='button'],
+.nav-item,
+.lg-btn,
+.glow-btn,
+.pill-btn,
+.amount-chip,
+.balance-step {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* iOS'da "yopishib qolgan" hover holati bo'lmasin */
+@media (hover: none) {
+  .lg-glass:hover { --lg-lit: 0; }
+  .mini-card:hover,
+  .game-card:hover,
+  .glass-card:hover {
+    transform: none;
+  }
+}
+
+/* ─── iOS'da blur byudjeti: 60fps uchun yumshatish ──────────── */
+@supports (-webkit-touch-callout: none) {
+  .glass-card,
+  .mini-card,
+  .mini-panel,
+  .game-card,
+  .lg-capsule,
+  .lg-btn-soft {
+    backdrop-filter: blur(22px) saturate(1.6);
+    -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  }
+
+  .mini-header::after {
+    backdrop-filter: blur(5px) saturate(1.3);
+    -webkit-backdrop-filter: blur(5px) saturate(1.3);
+  }
+}
+
+/* ─── Harakatni kamaytirish sozlamasi hurmat qilinadi ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .mini-page,
+  .lgx-tap,
+  .lgx-overlay-enter,
+  .lgx-overlay-enter::before,
+  .lgx-panel-enter,
+  .lgx-sheet-panel,
+  .cyber-grid::before,
+  .nav-item.active .nav-icon {
+    animation: none !important;
+  }
+
+  .lgx-press,
+  .nav-item.lgx-press,
+  .bottom-nav-indicator,
+  .mini-header,
+  .nav-item .nav-label {
+    transition: none !important;
+  }
+}
+

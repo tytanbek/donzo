@@ -12,6 +12,7 @@ import ScrollToTop from '@/components/ScrollToTop';
 import FloatingSupport from '@/components/FloatingSupport';
 import WebSocketInit from '@/components/WebSocketInit';
 import FragmentLogin from '@/components/FragmentLogin';
+import IosMotion from '@/components/IosMotion';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import './liquid-glass.css';
@@ -247,6 +248,8 @@ export default function RootLayout({
           <meta name="theme-color" content="#0F172A" />
         </head>
         <body className="cyber-grid min-h-screen">
+          {/* iOS 26 liquid-glass harakat dvigateli (linza, press, glint) */}
+          <IosMotion />
           <FragmentLogin />
         </body>
       </html>
@@ -281,6 +284,8 @@ export default function RootLayout({
       </head>
       <body className="cyber-grid min-h-screen">
         <Particles />
+        {/* iOS 26 liquid-glass harakat dvigateli — butun ilova uchun bir marta */}
+        <IosMotion />
         {isClassicShell ? (
           <div className="relative z-10 flex flex-col min-h-screen">
             {!isAdminShell && <Header />}
@@ -299,9 +304,12 @@ export default function RootLayout({
               {/* Lightweight fade-in only — no exit-wait so navigation is instant */}
               <motion.div
                 key={pathname}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.12, ease: 'easeOut' }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  opacity: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
+                  y: { type: 'spring', stiffness: 380, damping: 32, mass: 0.7 },
+                }}
               >
                 {children}
               </motion.div>
@@ -330,9 +338,12 @@ export default function RootLayout({
             <MiniAppShell>
               <motion.div
                 key={pathname}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.12, ease: 'easeOut' }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  opacity: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
+                  y: { type: 'spring', stiffness: 380, damping: 32, mass: 0.7 },
+                }}
               >
                 {children}
               </motion.div>
