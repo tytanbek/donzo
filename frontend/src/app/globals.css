@@ -2211,12 +2211,6 @@ body {
   word-break: break-word;
 }
 
-/* Kontent hech qachon butun sahifani yon tomonga surmasin —
-   jadvallar o'z skroll konteynerida harakatlanadi. */
-.admin-main {
-  overflow-x: clip;
-}
-
 @media (max-width: 480px) {
   /* Kichik telefonlarda jadval minimal kengligini kamaytirish —
      gorizontal skroll masofasi bir yarim ekrandan oshmasin. */
