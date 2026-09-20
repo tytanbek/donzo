@@ -675,13 +675,13 @@ export default function AdminCardpayPage() {
                   User client jarayoni (Telethon) — karta xabarlarini kuzatuvchi
                 </p>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/10 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/10 px-4 py-3 gap-x-3 gap-y-1 flex-wrap">
                     <span className="text-xs text-[#64748B]">So‘nggi heartbeat</span>
                     <span className="text-xs font-mono text-[#94A3B8]">
                       {ucStatus?.last_heartbeat ? new Date(ucStatus.last_heartbeat).toLocaleString('uz-UZ') : '—'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/10 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/10 px-4 py-3 gap-x-3 gap-y-1 flex-wrap">
                     <span className="text-xs text-[#64748B]">Restartlar</span>
                     <span className="text-xs font-mono text-[#94A3B8]">{ucStatus?.restarts ?? 0}</span>
                   </div>
@@ -806,7 +806,7 @@ export default function AdminCardpayPage() {
                     <p className="text-[11px] text-[#64748B] uppercase tracking-wide mb-2">Mijoz ko'radigan ko'rinish</p>
                     <div className="rounded-xl bg-gradient-to-br from-[#0B1220] to-[#101B2E] border border-white/10 p-4 flex items-center justify-between">
                       <div>
-                        <p className="font-mono text-lg font-bold text-white tracking-wider">
+                        <p className="font-mono text-sm sm:text-lg font-bold text-white tracking-wider">
                           {cardDigits(settings.card_number || '').replace(/(\d{4})(?=\d)/g, '$1 ') || '0000 0000 0000 0000'}
                         </p>
                         <p className="text-xs text-[#94A3B8] mt-1">{settings.card_holder || 'Karta egasi'}</p>
