@@ -207,7 +207,7 @@ export default function AdminPromoCodesPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-[#94A3B8] mb-2">
                         {form.discount_type === 'percentage' ? 'Chegirma foizi' : 'Chegirma miqdori'}
@@ -231,7 +231,7 @@ export default function AdminPromoCodesPage() {
                   </div>
 
                   {/* Usage Limits */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-[#94A3B8] mb-2">Maks. foydalanish (0=cheksiz)</label>
                       <input type="number" value={form.max_uses} onChange={(e) => setForm({ ...form, max_uses: parseInt(e.target.value) || 0 })} className="glass-input" />
@@ -243,7 +243,7 @@ export default function AdminPromoCodesPage() {
                   </div>
 
                   {/* Dates */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-[#94A3B8] mb-2">Boshlanish sanasi</label>
                       <input type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} className="glass-input" />

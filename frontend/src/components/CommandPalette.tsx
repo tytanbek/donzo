@@ -131,7 +131,7 @@ export default function CommandPalette() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4"
+          className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[7vh] sm:pt-[15vh] px-3 sm:px-4 pb-3"
           onClick={() => setIsOpen(false)}
         >
           <motion.div
@@ -139,11 +139,11 @@ export default function CommandPalette() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: -10 }}
             transition={{ duration: 0.18 }}
-            className="w-full max-w-lg glass-deep rounded-2xl overflow-hidden border-[#00F5FF]/15"
+            className="w-full max-w-lg glass-deep rounded-2xl overflow-hidden border-[#00F5FF]/15 flex flex-col max-h-[min(32rem,80vh)]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Input */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5">
+            <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/5 shrink-0">
               <FiSearch className="w-5 h-5 text-[#00F5FF] flex-shrink-0" />
               <input
                 ref={inputRef}
@@ -151,7 +151,7 @@ export default function CommandPalette() {
                 onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
                 onKeyDown={handleKeyDown}
                 placeholder="Qidirish: foydalanuvchi, buyurtma yoki sahifa..."
-                className="flex-1 bg-transparent outline-none text-white text-sm placeholder:text-[#64748B]"
+                className="flex-1 min-w-0 bg-transparent outline-none text-white text-base sm:text-sm placeholder:text-[#64748B]"
               />
               {isSearching && <div className="w-4 h-4 border-2 border-[#00F5FF]/30 border-t-[#00F5FF] rounded-full animate-spin flex-shrink-0" />}
               <button onClick={() => setIsOpen(false)} className="p-1 rounded-lg hover:bg-white/5 text-[#64748B]">
@@ -160,7 +160,7 @@ export default function CommandPalette() {
             </div>
 
             {/* Results */}
-            <div className="max-h-80 overflow-y-auto p-2">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2">
               {items.length === 0 ? (
                 <p className="text-center py-10 text-sm text-[#64748B]">Hech narsa topilmadi</p>
               ) : (
@@ -191,15 +191,16 @@ export default function CommandPalette() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 text-[10px] text-[#64748B]">
-              <span className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-white/5 text-[10px] text-[#64748B] shrink-0">
+              {/* Klaviatura ishorasi faqat sichqonchali qurilmada mazmunli */}
+              <span className="hidden sm:flex items-center gap-2">
                 <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">↑</kbd>
                 <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">↓</kbd>
                 harakat
                 <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 ml-2">Enter</kbd>
                 ochish
               </span>
-              <button onClick={() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); window.location.href = '/'; }} className="flex items-center gap-1.5 hover:text-red-400 transition-colors">
+              <button onClick={() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); window.location.href = '/'; }} className="ml-auto flex items-center gap-1.5 hover:text-red-400 transition-colors">
                 <FiLogOut className="w-3 h-3" /> Chiqish
               </button>
             </div>

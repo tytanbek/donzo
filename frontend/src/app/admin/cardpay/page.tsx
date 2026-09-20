@@ -728,7 +728,7 @@ export default function AdminCardpayPage() {
                     <input value={settings.report_chat_id || ''} onChange={(e) => set('report_chat_id', e.target.value)}
                       placeholder="-1009876543210" className="glass-input text-sm" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-[#94A3B8] block mb-1.5">Shubhali limit (so'm)</label>
                       <input type="number" value={settings.suspicious_limit ?? 500000} onChange={(e) => set('suspicious_limit', e.target.value)}

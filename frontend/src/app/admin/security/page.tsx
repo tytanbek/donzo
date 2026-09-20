@@ -579,7 +579,7 @@ export default function AdminSecurityPage() {
                       placeholder={settings.gemini_configured ? 'Saqlangan (almashtirish uchun yozing)' : 'AIza...'}
                       className="glass-input text-sm" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-[#94A3B8] block mb-1.5">Model</label>
                       <input value={settings.gemini_model || ''} onChange={(e) => set('gemini_model', e.target.value)}
@@ -644,7 +644,7 @@ export default function AdminSecurityPage() {
                   <FiZap className="w-4 h-4 text-[#00F5FF]" /> Risk & Velocity limitlari
                 </h2>
                 <p className="text-xs text-[#64748B] mb-5">Thresholdlar admin orqali o'zgaradi</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
                     { key: 'risk_low_max', label: 'LOW max' },
                     { key: 'risk_medium_max', label: 'MEDIUM max' },
@@ -679,7 +679,7 @@ export default function AdminSecurityPage() {
                     <input value={settings.secondary_admin_id || ''} onChange={(e) => set('security_secondary_admin_id', e.target.value)}
                       className="glass-input text-sm" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-[#94A3B8] block mb-1.5">ACK timeout (daqiqa)</label>
                       <input type="number" value={settings.ack_timeout_min ?? 2} onChange={(e) => set('security_ack_timeout_min', e.target.value)}
@@ -691,7 +691,7 @@ export default function AdminSecurityPage() {
                         className="glass-input text-sm" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-[#94A3B8] block mb-1.5">Blacklist (vergul bilan)</label>
                       <textarea value={settings.blacklist || ''} onChange={(e) => set('security_blacklist', e.target.value)}

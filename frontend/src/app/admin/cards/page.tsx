@@ -448,7 +448,7 @@ export default function AdminCardsPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-slate-300 mb-1">Karta egasi</label>
                   <input
@@ -469,7 +469,7 @@ export default function AdminCardsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-slate-300 mb-1">Maksimal summa (so‘m)</label>
                   <input

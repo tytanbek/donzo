@@ -2190,3 +2190,37 @@ body {
     border-radius: 14px;
   }
 }
+
+/* Telefon/planshet: admin formalaridagi maydonlar 16px. iOS Safari 16px dan
+   kichik inputni fokuslaganda butun sahifani zoom qiladi va panel
+   "siljib ketgan" holatga tushadi. Tailwind'ning text-sm/text-xs klassidan
+   ustun turadi (element selektori kuchliroq). */
+@media (max-width: 1023px) {
+  .admin-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .admin-main select,
+  .admin-main textarea {
+    font-size: 16px;
+  }
+}
+
+/* Uzun token / hash / JSON qiymatlar kartani chetga surib yubormasin */
+.admin-main .font-mono,
+.admin-main code,
+.admin-main pre {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Kontent hech qachon butun sahifani yon tomonga surmasin —
+   jadvallar o'z skroll konteynerida harakatlanadi. */
+.admin-main {
+  overflow-x: clip;
+}
+
+@media (max-width: 480px) {
+  /* Kichik telefonlarda jadval minimal kengligini kamaytirish —
+     gorizontal skroll masofasi bir yarim ekrandan oshmasin. */
+  .admin-main table {
+    min-width: 540px;
+  }
+}

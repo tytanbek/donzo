@@ -265,7 +265,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               exit={{ x: -280 }}
               transition={{ type: 'tween', duration: 0.25 }}
               className="lg:hidden fixed left-0 top-0 bottom-0 z-40 w-72 max-w-[85vw]"
-              style={{ paddingTop: 'calc(56px + var(--safe-top, 0px))' }}
+              style={{
+                // Butun balandlikda bitta shisha panel: ustidagi bo'sh chiziq
+                // ham blur bo'ladi (avval u yerda sahifa ko'rinib qolardi).
+                background: 'linear-gradient(180deg, rgba(15, 20, 38, 0.92) 0%, rgba(10, 14, 26, 0.88) 100%)',
+                backdropFilter: 'blur(50px) saturate(1.5)',
+                WebkitBackdropFilter: 'blur(50px) saturate(1.5)',
+                paddingTop: 'calc(var(--safe-top, 0px) + 8px)',
+                paddingBottom: 'calc(var(--safe-bottom, 0px) + 8px)',
+              }}
             >
               {renderSidebarBody(false)}
             </motion.aside>

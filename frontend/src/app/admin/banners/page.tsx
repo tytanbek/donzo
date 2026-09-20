@@ -133,7 +133,7 @@ export default function AdminBannersPage() {
                   <label className="block text-sm font-medium text-[#94A3B8] mb-2">Havola URL (ixtiyoriy)</label>
                   <input type="url" value={form.link_url} onChange={(e) => setForm({ ...form, link_url: e.target.value })} className="glass-input" placeholder="https://..." />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-[#94A3B8] mb-2">Boshlanish sanasi</label>
                     <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className="glass-input" />

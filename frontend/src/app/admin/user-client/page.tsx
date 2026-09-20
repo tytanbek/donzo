@@ -318,7 +318,7 @@ export default function AdminUserClientPage() {
                 onChange={(e) => setForm({ ...form, report_chat_id: e.target.value })}
                 placeholder="-100..." />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <p className={label}>Shubhali limit (so'm)</p>
                 <input type="number" className={input} value={form.payment_suspicious_limit ?? 500000}
@@ -330,7 +330,7 @@ export default function AdminUserClientPage() {
                   onChange={(e) => setForm({ ...form, payment_timeout_minutes: e.target.value })} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <p className={label}>Noyob summa offseti (maks)</p>
                 <input type="number" className={input} value={form.payment_unique_offset_max ?? 999}
