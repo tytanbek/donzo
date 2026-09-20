@@ -2135,3 +2135,58 @@ body {
 .mini-anim-in {
   animation: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN / CRM RESPONSIVE LAYER
+   Admin panel telefon → 4K gacha buzilmasdan ishlashi uchun.
+   Faqat `.admin-main` ichida ta'sir qiladi (user mini-app'ga tegilmaydi).
+   ═══════════════════════════════════════════════════════════ */
+
+/* Sidebar + kontent birga sig'ishi uchun asosiy flex farzand siqila olsin */
+.admin-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Uzun matnlar (sessiya satrlari, hash'lar, xato xabarlari) jadval va
+   kartalarni chetga surib yubormasin. */
+.admin-main table td,
+.admin-main table th {
+  overflow-wrap: anywhere;
+}
+
+/* Jadval skroll konteynerlari — iOS'da silliq gorizontal skroll */
+.admin-main > div > .overflow-x-auto,
+.admin-main .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 1023px) {
+  /* Planshet/telefonda ustunlar siqilib, matn ustma-ust tushmasin —
+     jadval o'z minimal kengligini saqlab, gorizontal skroll bo'ladi. */
+  .admin-main table {
+    min-width: 660px;
+  }
+
+  /* Skrollbarni ko'rinadigan, lekin nozik qilish (WebKit) */
+  .admin-main .overflow-x-auto::-webkit-scrollbar {
+    height: 5px;
+  }
+  .admin-main .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: rgba(0, 245, 255, 0.18);
+    border-radius: 999px;
+  }
+  .admin-main .overflow-x-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Kichik telefonlarda modal / karta ichidagi chetlarni qisqartirish —
+     kontent uchun ko'proq joy, gorizontal sakrash yo'q. */
+  .admin-main .glass-card {
+    border-radius: 14px;
+  }
+}

@@ -62,14 +62,14 @@ export default function AdminLogsPage() {
       {/* Filter + search */}
       <div className="glass-card p-4">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <div className="flex items-center gap-2">
-            <FiFilter className="w-4 h-4 text-[#64748B]" />
-            <div className="flex gap-1.5 p-1 rounded-xl bg-white/5 border border-white/5">
+          <div className="flex items-center gap-2 min-w-0 max-w-full">
+            <FiFilter className="w-4 h-4 text-[#64748B] shrink-0" />
+            <div className="flex gap-1.5 p-1 rounded-xl bg-white/5 border border-white/5 overflow-x-auto max-w-full">
               {FILTERS.map((f) => (
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 whitespace-nowrap ${
                     filter === f.key
                       ? 'bg-gradient-to-r from-[#00F5FF] to-[#A855F7] text-[#0F172A]'
                       : 'text-[#94A3B8] hover:text-white'

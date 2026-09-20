@@ -151,14 +151,14 @@ export default function AdminPromoCodesPage() {
         {showForm && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4"
             onClick={() => setShowForm(false)}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-              className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}
             >
-              <div className="glass-card p-8">
+              <div className="glass-card p-5 sm:p-8 max-h-[88vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-bold text-white">
                     {editing ? 'Promo Kodni Tahrirlash' : 'Yangi Promo Kod'}

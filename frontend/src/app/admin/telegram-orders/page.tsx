@@ -439,7 +439,7 @@ export default function AdminTelegramOrdersPage() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 16 }}
               onClick={(e) => e.stopPropagation()}
-              className="glass-card max-w-md w-full p-6"
+              className="glass-card max-w-md w-full p-5 sm:p-6 max-h-[88vh] overflow-y-auto"
             >
               <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/25 flex items-center justify-center mb-4">
                 <FiAlertCircle className="w-6 h-6 text-red-400" />

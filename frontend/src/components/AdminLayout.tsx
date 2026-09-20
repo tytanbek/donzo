@@ -274,8 +274,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </AnimatePresence>
 
       {/* ═══ Main Content ═══ */}
-      <main className={`flex-1 transition-all duration-300 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-8 lg:pt-8">
+      <main className={`admin-main min-w-0 flex-1 transition-all duration-300 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-20 pb-8 lg:pt-8">
           {children}
         </div>
       </main>

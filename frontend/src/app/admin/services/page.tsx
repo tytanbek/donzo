@@ -235,15 +235,15 @@ export default function AdminServicesPage() {
         {showForm && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-10 bg-black/60 backdrop-blur-sm overflow-y-auto"
+            className="fixed inset-0 z-50 flex items-start justify-center px-3 sm:px-4 pt-6 sm:pt-12 pb-8 bg-black/60 backdrop-blur-sm overflow-y-auto"
           >
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="w-full max-w-2xl mx-4"
+              className="w-full max-w-2xl"
             >
-              <div className="glass-card p-8">
+              <div className="glass-card p-5 sm:p-8">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-bold text-white">
                     {editingId != null ? 'Xizmatni tahrirlash' : 'Yangi xizmat yaratish'}

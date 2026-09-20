@@ -293,12 +293,12 @@ export default function AdminDashboard() {
             <FiTrendingUp className="w-5 h-5 text-[#00F5FF]" />
             <h2 className="text-lg font-bold text-white">Daromad</h2>
           </div>
-          <div className="flex gap-1.5 p-1 rounded-xl bg-white/5 border border-white/5">
+          <div className="flex gap-1.5 p-1 rounded-xl bg-white/5 border border-white/5 overflow-x-auto max-w-full">
             {PERIODS.map((p) => (
               <button
                 key={p.key}
                 onClick={() => setPeriod(p.key)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 whitespace-nowrap ${
                   period === p.key
                     ? 'bg-gradient-to-r from-[#00F5FF] to-[#A855F7] text-[#0F172A]'
                     : 'text-[#94A3B8] hover:text-white'
@@ -526,8 +526,8 @@ export default function AdminDashboard() {
 
       {/* ═══ RESET STATS CONFIRMATION MODAL ═══ */}
       {showResetModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-card p-6 border-red-500/25">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md glass-card p-5 sm:p-6 border-red-500/25 max-h-[88vh] overflow-y-auto">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-2xl bg-red-500/15 flex items-center justify-center shrink-0">
                 <FiAlertTriangle className="w-6 h-6 text-red-400" />
