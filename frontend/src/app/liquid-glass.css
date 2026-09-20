@@ -1120,6 +1120,31 @@ body {
   translate: 0 -1px;
 }
 
+/* ─── 5b. IOS DETALLARI — sheen va emoji "sakrashi" ─────────── */
+/* Tugma bosilganda yorug'lik yugurib o'tadi (iOS 26 tugma javobi).
+   `both` ishlatilmaydi: animatsiya tugagach tugma o'z holatiga
+   qaytadi, shunda hover'dagi sheen ham ishlashda davom etadi. */
+@keyframes lgx-sheen {
+  from { left: -80%; }
+  to { left: 130%; }
+}
+
+.lg-btn.lgx-tap::after {
+  animation: lgx-sheen 720ms var(--ios-fluid);
+}
+
+/* Mini-karta emojisi: hover ham, bosish ham bir xil prujina bilan */
+.mini-card-emoji {
+  transition:
+    transform 420ms var(--ios-spring),
+    border-color 280ms ease,
+    box-shadow 280ms ease;
+}
+
+.mini-card.lgx-press .mini-card-emoji {
+  transform: rotate(0deg) scale(0.94);
+}
+
 /* ─── 6. HEADER — skrollga bog'langan yumshoq soya ───────────── */
 .mini-header {
   transition: box-shadow 320ms ease, border-color 320ms ease;
