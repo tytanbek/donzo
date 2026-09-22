@@ -250,10 +250,11 @@ def _price_sync_loop():
 def _send_proactive_message():
     """Tasodifiy staff a'zosiga DONZO o'z-o'zidan jonli xabar yuboradi.
 
-    DONZO guruhda "yashaydi": vaqti-vaqti bilan staff a'zolarini belgilab,
-    hazil / muloyim tanqid / ustidan kulish bilan xabar yozadi — xuddi o'z
-    hayoti bor odamdek. Tizim holati/raqamlar xabarga ARALASHMAYDI (persona
-    taqiqlaydi). Hech qachon exception tashlamaydi — bot buzilmaydi.
+    DONZO guruhda "yashaydi": vaqti-vaqti bilan suhbatga qo'shilib, suhbatdosh
+    aytgan gapga REPLY qilib, o'sha gapni chaynab tashlaydigan javob yozadi
+    (angry/turbo rejimda kinoya bilan, gentle rejimda iliq). HEch kim
+    @belgilanmaydi — ommaviy ping yo'q. Tizim holati/raqamlar xabarga
+    ARALASHMAYDI (persona taqiqlaydi). Hech qachon exception tashlamaydi.
     """
     try:
         import json
@@ -303,16 +304,35 @@ def _send_proactive_message():
                 candidates = staff
             target = random.choice(candidates)
 
+        # HEch kim @belgilanmaydi: agar o'sha odam yaqinda gap aytgan bo'lsa —
+        # uning xabariga REPLY qilinadi (tabiiy suhbat, ping yo'q). Gap
+        # topilmasa — xabar baribir ketadi, lekin kimnidir "sen aytding" deb
+        # o'ylab topilmaydi.
+        target_names = {(target.username or '').lower().lstrip('@'),
+                        (getattr(target, 'telegram_username', '') or '').lower().lstrip('@')}
+        hit = _last_message_of(chat_id, target_names, _PROACTIVE_REPLY_MAX_AGE_S)
+        their_text, reply_mid = ('', None)
+        if hit:
+            reply_mid, their_text, _age = hit
+        # Suhbat konteksti — staff guruhida hozir nima gap bo'layotgani
+        room = _GROUP_LAST_MSG.get(str(chat_id)) or {}
+        recent = sorted(room.values(), key=lambda r: r['ts'])[-3:]
+        context = '\n'.join(f"- {r.get('text', '')}" for r in recent)
+
         from apps.security import staff_ai
-        res = staff_ai.proactive_message(target.username, mock=mock)
+        res = staff_ai.proactive_message(target.username, mock=mock,
+                                        their_text=their_text, context=context)
         if not res.get('ok') or not res.get('answer'):
             return
 
-        mention = (f"@{target.telegram_username}" if getattr(target, 'telegram_username', None)
-                   else target.username)
-        text = f"{mention}\n\n{res['answer']}"
+        text = _strip_pings((res['answer'] or '').strip())
+        if not text:
+            return
 
         payload = {'chat_id': chat_id, 'text': text, 'disable_web_page_preview': True}
+        if reply_mid:
+            payload['reply_to_message_id'] = reply_mid
+            payload['allow_sending_without_reply'] = True
         req = urllib.request.Request(
             f'https://api.telegram.org/bot{token}/sendMessage',
             data=json.dumps(payload).encode('utf-8'),
@@ -1523,8 +1543,94 @@ _TURBO_ACTIVE_WINDOW_S = 900    # "suhbat faol" oynasi (15 daqiqa)
 _TURBO_ACTIVE_MIN_MSGS = 2      # oynada kamida shuncha xabar
 _TURBO_RATE_PER_HOUR = 22       # soatiga maksimal javob (config kam bo'lsa ham)
 _TURBO_FORCE_AD_EVERY = 6       # har necha javobda kamida bitta reklama
-_TURBO_ROAST_INTERVAL_MIN = 5   # a'zolarga murojaat oralig'i (daqiqa)
-_TURBO_ROAST_COOLDOWN_MIN = 5   # bir a'zoga qayta murojaat (daqiqa)
+_TURBO_ROAST_INTERVAL_MIN = 5   # suhbatga qo'shilish oralig'i (daqiqa)
+_TURBO_ROAST_COOLDOWN_MIN = 5   # bir odamga qayta javob (daqiqa)
+_TURBO_BANTER_MAX_AGE_S = 2700  # turbo: javob beriladigan xabar yoshi (45 daqiqa)
+_BANTER_MAX_AGE_S = 5400        # oddiy rejim: 90 daqiqa
+_PROACTIVE_REPLY_MAX_AGE_S = 21600  # staff guruhda proaktiv javob (6 soat)
+
+# ── GURUHDA KIM NIMA DEDI (reply qilish uchun xotira) ─────────────────────
+# chat_id -> {username: {'mid': message_id, 'ts': epoch, 'text': oxirgi gap}}
+# FAQAT bot ko'rgan haqiqiy xabarlar yoziladi. Shu tufayli DONZO
+# "hammani belgilab" yozmaydi — kimdir aytgan gapga REPLY qilib, o'sha
+# gapning o'zini chaynab javob qaytaradi. Restart bo'lsa xotira bo'shaydi
+# va bot jim turadi — begona odamni belgilab yozish yo'q.
+_GROUP_LAST_MSG: dict = {}
+
+
+def _remember_group_message(chat_id: str, username: str, message_id, text: str):
+    """Guruhdagi oxirgi xabarni eslab qoladi (reply uchun). Xato tashlamaydi."""
+    try:
+        uname = (username or '').strip().lower().lstrip('@')
+        if not chat_id or not uname or not message_id:
+            return
+        room = _GROUP_LAST_MSG.setdefault(str(chat_id), {})
+        room[uname] = {'mid': int(message_id), 'ts': time.time(),
+                       'text': (text or '')[:400]}
+        if len(room) > 60:  # eski yozuvlarni tozalab turamiz
+            oldest = sorted(room.items(), key=lambda kv: kv[1]['ts'])[:20]
+            for k, _ in oldest:
+                room.pop(k, None)
+    except Exception:
+        pass
+
+
+def _last_message_of(chat_id: str, usernames, max_age_s: float):
+    """Shu odamlardan eng oxirgi gap aytganini topadi: (mid, text, age_s).
+
+    usernames — username/telegram_username to'plami (kichik harflar).
+    Hech biri yozmagan bo'lsa None — u holda DONZO o'sha odamni eslamaydi
+    (ya'ni "sen aytding" deb yolg'on gap tashlamaydi).
+    """
+    try:
+        now = time.time()
+        room = _GROUP_LAST_MSG.get(str(chat_id)) or {}
+        hits = [(rec['ts'], rec) for u, rec in room.items()
+                if u in {(x or '').strip().lower().lstrip('@') for x in usernames}
+                and now - rec['ts'] <= float(max_age_s)]
+        if not hits:
+            return None
+        ts, rec = max(hits, key=lambda kv: kv[0])
+        return rec['mid'], rec.get('text', ''), now - ts
+    except Exception:
+        return None
+
+
+def _recent_group_speaker(chat_id: str, max_age_s: float = None):
+    """Shu guruhda YAqinda yozgan odamni qaytaradi: (username, mid, text, age_s).
+
+    Eng yangi gap egasi tanlanadi — DONZO suhbatdoshga, o'sha odam aytgan
+    gapga javob yozadi. Hech kim yozmagan bo'lsa None (belgilab yozilmaydi).
+    """
+    try:
+        limit = float(max_age_s or _BANTER_MAX_AGE_S)
+        now = time.time()
+        room = _GROUP_LAST_MSG.get(str(chat_id)) or {}
+        fresh = [(u, rec) for u, rec in room.items() if now - rec['ts'] <= limit]
+        if not fresh:
+            return None
+        username, rec = max(fresh, key=lambda kv: kv[1]['ts'])
+        return username, rec['mid'], rec.get('text', ''), now - rec['ts']
+    except Exception:
+        return None
+
+
+# Telegram'da @belgilash — ping. Guruhda hech kim belgilanmasligi uchun
+# AI javobidagi '@' olib tashlanadi (ism qoladi, bildirishnoma ketmaydi).
+_MENTION_RE = re.compile(r'(?<![\w@/])@([A-Za-z0-9_]{2,})')
+
+
+def _strip_pings(text: str) -> str:
+    """Javobdan @belgilashlarni olib tashlaydi — ommaviy ping bo'lmasin.
+
+    '@ali, gapirma' -> 'ali, gapirma'. Ma'no saqlanadi, lekin Telegram
+    bildirishnoma yubormaydi. Xato bo'lsa matn o'zgarishsiz qaytadi.
+    """
+    try:
+        return _MENTION_RE.sub(r'\1', text or '')
+    except Exception:
+        return text or ''
+
 
 def _record_group_member(chat_id: str, username: str, first_name: str = '',
                          user_id=None):
@@ -1542,14 +1648,16 @@ def _record_group_member(chat_id: str, username: str, first_name: str = '',
 
 
 def _send_group_roast():
-    """Marketing guruhidagi a'zolarni username orqali kinoyali masxara bilan
-    murojaat qiladi — "guruhdagi hammaga gapirib chiqadi".
+    """Suhbatga tish bilan kirish: kimdir yaqinda GAP aytgan bo'lsa —
+    o'sha odamning xabariga REPLY qilib, o'sha gapning o'zini "chaynab"
+    javob qaytaradi va gapda yengilmasligini ko'rsatadi.
 
-    A'zolar DB'dan o'qiladi (marketing_group_members) — bot restart bo'lsa ham
-    kimlarni bilganini eslab qoladi. Agar DB bo'sh bo'lsa — Telegram API orqali
-    a'zolarni olib, DB'ga yozadi. Har safar kamroq masxara qilingan a'zoni
-    tanlaydi (30 daqiqada bir marta odamga). Staff/hisobot/monitor guruhlariga
-    hech qachon yozmaydi. Xato hech narsani buzmaydi.
+    MUHIM: hech kim @username bilan BELGILANMAYDI (ommaviy ping yo'q).
+    Faqat shu suhbatda haqiqatan yozgan odamga, uning oxirgi xabariga reply
+    qilinadi. Kim yozmagan / suhbat faol bo'lmagan bo'lsa — DONZO jim turadi
+    (bot restartdan keyin xotira bo'sh — hech kim belgilanmaydi).
+    Staff/hisobot/monitor guruhlariga hech qachon yozmaydi.
+    Xato hech narsani buzmaydi.
     """
     try:
         from django.utils import timezone
@@ -1562,69 +1670,72 @@ def _send_group_roast():
             return
         skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
                 str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
-        from apps.security import staff_ai
+        from apps.security import staff_ai as _sa
 
         now = timezone.now()
-        # TURBO rejim (angry kuchaytirilgan) — masxara intervali 30 → 8 daqiqa:
-        # DONZO guruhda doimiy jonli, a'zolarga tez-tez murojaat qilinadi.
-        from apps.security import staff_ai as _sa
         turbo_roast = _sa._get_ai_mode() == 'turbo'
-        cutoff = now - timedelta(
-            minutes=(_TURBO_ROAST_COOLDOWN_MIN if turbo_roast else 30))
+        cooldown_min = _TURBO_ROAST_COOLDOWN_MIN if turbo_roast else 30
+        cutoff = now - timedelta(minutes=cooldown_min)
+        max_age = _TURBO_BANTER_MAX_AGE_S if turbo_roast else _BANTER_MAX_AGE_S
         # 7 kun harakatsiz a'zolarni tozalash (vaqti-vaqti bilan)
         MarketingGroupMember.prune(days=7)
 
-        # Agar DB'da a'zolar yo'q bo'lsa — Telegram API orqali adminlarni olib kelamiz
-        db_count = MarketingGroupMember.objects.count()
-        if db_count == 0:
+        # A'zolar jadvali bo'sh bo'lsa (yangi baza) — bir marta to'ldirib olamiz
+        if MarketingGroupMember.objects.count() == 0:
             _fetch_and_record_group_members(token, skip)
 
-        candidates = []
-        # Bot o'zini, egasini va hurmatli foydalanuvchilarni chiqarib tashlaymiz
-        bot_username = (Setting.get_setting('telegram_bot_username', '') or '').lower()
+        # Hamma BELGILAMASDAN: faqat haqiqiy suhbatdagi odamga javob.
+        bot_username = (Setting.get_setting('telegram_bot_username', '') or '').lower().lstrip('@')
         owner_id = (Setting.get_setting('super_admin_telegram_id', '') or '').strip()
         respected_raw = (Setting.get_setting('staff_ai_respected_users', '') or '').lower()
         respected = {u.strip().lstrip('@') for u in respected_raw.split(',') if u.strip()}
-        members = (MarketingGroupMember.objects
-                   .filter(last_seen_at__gte=now - timedelta(days=7))
-                   .values('chat_id', 'username', 'last_seen_at', 'last_roast_at', 'user_id')
-                   .order_by('chat_id'))
-        per_chat = {}
-        for m in members:
-            cid = str(m['chat_id'])
+
+        picked = None
+        for cid in list(_GROUP_LAST_MSG.keys()):
             if cid in skip:
                 continue
-            per_chat.setdefault(cid, []).append(m)
-
-        for cid, rows in per_chat.items():
-            best, best_score = None, None
-            for r in rows:
-                uname = r['username']
-                # Bot, egasi va hurmatli foydalanuvchilarni o'tkazib yuboramiz
-                if uname == bot_username:
-                    continue
-                if str(r.get('user_id') or '') == owner_id:
-                    continue
-                if uname in respected:
-                    continue
-                last_roast = r.get('last_roast_at')
-                if last_roast and last_roast > cutoff:  # 30 daqiqada bir marta
-                    continue
-                score = (r['last_seen_at'] - (last_roast or r['last_seen_at'])).total_seconds()
-                if best_score is None or score > best_score:
-                    best, best_score = uname, score
-            if best:
-                candidates.append((cid, best))
-        if not candidates:
+            # Suhbat faol bo'lishi shart: oxirgi 30 daqiqada kamida 2 xabar
+            conv = _GROUP_CONVERSATIONS.get(cid)
+            if not conv or not _conversation_active(conv, 1800, _TURBO_ACTIVE_MIN_MSGS):
+                continue
+            speaker = _recent_group_speaker(cid, max_age)
+            if not speaker:
+                continue
+            username, mid, their_text, _age = speaker
+            if username in respected or username == bot_username:
+                continue
+            row = (MarketingGroupMember.objects.filter(chat_id=cid, username=username)
+                   .values('user_id', 'last_roast_at').first())
+            # Egasini chetlab o'tamiz — sozlama BO'SH bo'lsa hammani
+            # tashlab yubormasligi uchun avval bo'sh emasligini tekshiramiz.
+            if owner_id and str((row or {}).get('user_id') or '') == owner_id:
+                continue
+            last_roast = (row or {}).get('last_roast_at')
+            if last_roast and last_roast > cutoff:
+                continue  # shu odamga yaqinda javob yozilgan — tinch turamiz
+            picked = (cid, username, mid, their_text)
+            break
+        if not picked:
             return
-        cid, username = random.choice(candidates)
+        cid, username, mid, their_text = picked
 
-        res = staff_ai.proactive_message(username, mock=True)
-        answer = (res.get('answer') or '').strip()
+        # Suhbat konteksti — AI gapni chaynab tashlashi uchun
+        conv = _GROUP_CONVERSATIONS.get(cid) or {}
+        context = '\n'.join(f"- {t}" for _, t in (conv.get('messages') or [])[-4:])
+
+        res = _sa.proactive_message(username, mock=True,
+                                    their_text=their_text, context=context)
+        answer = _strip_pings((res.get('answer') or '').strip())
         if not answer:
             return
-        text = f"@{username}\n\n{answer}"
-        payload = {'chat_id': cid, 'text': text, 'disable_web_page_preview': True}
+        payload = {
+            'chat_id': cid,
+            'text': answer,
+            'disable_web_page_preview': True,
+            # @belgilash o'rniga oddiy reply — hech kim "ping" bo'lmaydi
+            'reply_to_message_id': mid,
+            'allow_sending_without_reply': True,
+        }
         res2 = _tg_api(token, 'sendMessage', payload)
         if not (res2 and res2.get('ok')):
             return
@@ -1635,9 +1746,9 @@ def _send_group_roast():
             MarketingGroupStat.record(cid, title, 'reply')
         except Exception:
             pass
-        print(f"[MARKETING] Masxara: @{username} ({cid})", flush=True)
+        print(f"[MARKETING] Gapga qo'shildi: {username} ({cid})", flush=True)
     except Exception as exc:
-        print(f"[MARKETING] Masxara xatosi: {type(exc).__name__}", flush=True)
+        print(f"[MARKETING] Suhbat javobi xatosi: {type(exc).__name__}", flush=True)
 
 
 def _fetch_and_record_group_members(token: str, skip: set):
@@ -1676,11 +1787,12 @@ def _fetch_and_record_group_members(token: str, skip: set):
 
 
 def _group_roast_loop():
-    """Marketing guruhlarida a'zolarni username bilan kinoyali murojaat qilish.
+    """Marketing guruhlarida suhbatga qo'shilish (gapda yengilmaslik).
 
-    Sozlamalar:
-      marketing_roast_enabled      — 'true'/'false' (default false)
-      marketing_roast_interval_min — murojaatlar orasidagi interval (daqiqa)
+    DONZO hech kimni @belgilamaydi — faqat aytilgan gapga reply qilib,
+    suhbatdoshning gapini chaynab tashlaydi. Sozlamalar:
+      marketing_roast_enabled      — 'true'/'false'
+      marketing_roast_interval_min — suhbatga qo'shilish oralig'i (daqiqa)
     Xato hech narsani buzmaydi; loop abadiy ishlaydi.
     """
     time.sleep(180)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
@@ -1756,9 +1868,21 @@ def _marketing_rate_ok(chat_id: str, max_per_hour: int) -> bool:
         return True
 
 
-def _marketing_ad() -> str:
-    """DONZO kreativ reklamasi — pahta kabi shirin, odamlarni maqtoq.
-    Har safar yangi, takrorlanmas reklama. Faqat ORA-ORADA yuboriladi."""
+def _marketing_ad(turbo: bool = False) -> str:
+    """DONZO kreativ reklamasi — rejimga mos ohangda, kam va tabiiy.
+
+    turbo=True bo'lsa gapda yengilmas, dominant uslub (TURBO personasiga mos);
+    aks holda eski iliq/shirin reklamalar. Faqat ORA-ORADA qo'shiladi.
+    """
+    if turbo:
+        return random.choice((
+            "donzoda oldim, 1 daqiqada keldi — gap emas, natija 😏",
+            "narxni donzoda solishtiring — bahslashishdan foydaliroq 🔥",
+            "donzoda 1 daqiqada hal bo'ladi, bu bahs esa hali davom etyapti 😤",
+            "donzo — jiddiy ish: PUBG, Free Fire, Premium. 1 daqiqada 👑",
+            "kulaverasiz, lekin donzoda narx jiddiy — tekshirib ko'ring 🔥",
+            "donzo har doim to'g'ri chiqadi — tekshirib ko'rsangiz bilasiz 😏",
+        ))
     ads = [
         "siz juda zo'r ekansiz! donzo siz uchun maxsus tayyorlangan 💕",
         "bu guruhdagi eng chiroyli odamlar shu yerda — donzo ham shu fikrda 😊",
@@ -1890,6 +2014,9 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     await sync_to_async(_record_group_member)(chat_id, username,
                                               getattr(user, 'first_name', '') or '',
                                               getattr(user, 'id', None))
+    # Kim nima deganini eslab qolamiz: DONZO keyin BELGILAMASDAN, aynan shu
+    # gapga reply qilib javob beradi (ommaviy ping yo'q).
+    _remember_group_message(chat_id, username, getattr(msg, 'message_id', None), text)
     # Operatsion (staff/hisobot/monitor) guruhlarni o'tkazib yuborish
     try:
         from apps.settings_app.group_access import marketing_skip_chat_ids
@@ -1936,6 +2063,8 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     answer = (result.get('answer') or '').strip()
     if not answer:
         return
+    # @belgilashlarni olib tashlaymiz — guruhda ommaviy ping bo'lmasin
+    answer = _strip_pings(answer)
 
     # Reklama: har javobga emas — suhbat qiziqgan joyda. Har 3-javobda kamida
     # bitta reklama; qolgan hollarda ad_prob ehtimol bilan. Javobning o'zida
@@ -1947,7 +2076,7 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
                 else (reply_count % 5 == 0))
     already_mentioned = 'donzo' in answer.lower()
     if (force_ad or random.random() < ad_prob) and not already_mentioned:
-        ad = await sync_to_async(_marketing_ad)()
+        ad = await sync_to_async(_marketing_ad)(mode_turbo)
         if ad:
             answer = answer.rstrip() + ' ' + ad
             sent_ad = True
@@ -1994,7 +2123,7 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'false').lower() == 'true'
         if not enabled and not _turbo_gate:
             return
-        ad = await sync_to_async(_marketing_ad)()
+        ad = await sync_to_async(_marketing_ad)(_turbo_gate)
         if not ad:
             return
         welcome = (
@@ -2051,6 +2180,13 @@ async def staff_ai_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     starts_with_donzo = re.match(r'^donzo[\s,:!.]*', text, flags=re.IGNORECASE) is not None
     is_private = bool(msg.chat) and msg.chat.type == 'private'
     is_group = bool(msg.chat) and msg.chat.type in ('group', 'supergroup')
+
+    if is_group:
+        # Guruhda kim nima deganini eslab qolamiz — DONZO keyin BELGILAMASDAN,
+        # aynan shu gapga reply qilib gapiradi (staff guruhi ham shu yo'l).
+        _remember_group_message(str(msg.chat.id),
+                                getattr(user, 'username', None) or '',
+                                getattr(msg, 'message_id', None), text)
 
     # ── Staff yo'li (trigger bo'lsa) ──
     if is_reply_to_bot or mentioned or starts_with_donzo or is_private:

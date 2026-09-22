@@ -1094,3 +1094,75 @@ class StaffAiTests(TestCase):
             r = staff_ai.marketing_reply(None, '')
         self.assertTrue(r['ok'])
         self.assertTrue(r['answer'])
+
+    # ── GAPDA YENGILMASLIK: suhbatdoshning gapini chaynash ──────────────
+
+    def test_turbo_prompt_forbids_tagging_and_carries_opponent(self):
+        # TURBO: hech kim @belgilanmaydi + suhbatdoshning gapini chaynash
+        Setting.set_setting('gemini_api_key', 'fake-key')
+        Setting.set_setting('security_ai_enabled', 'true')
+        Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'turbo')
+        captured = {}
+
+        def fake_call(prompt):
+            captured['prompt'] = prompt
+            return {'ok': True, 'answer': 'o\'z gaping bilan yutqazding 😏'}
+
+        with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
+            r = staff_ai.marketing_reply("men sizdan zo'r o'ynayman", 'Gamerlar',
+                                        '- kecha ham shunday dedi',
+                                        author_username='rival1')
+        self.assertTrue(r['ok'])
+        prompt = captured['prompt']
+        self.assertIn('BELGILAMASLIK', prompt)
+        self.assertIn('YENGILMASLIK', prompt)
+        self.assertIn('@username', prompt)
+        self.assertIn('rival1', prompt)
+        self.assertIn("men sizdan zo'r o'ynayman", prompt)
+        self.assertIn('kecha ham shunday dedi', prompt)
+
+    def test_proactive_banter_chews_opponent_gap(self):
+        # mock: suhbatdosh aytgan gap AI ga beriladi va persona uni chaynaydi
+        Setting.set_setting('gemini_api_key', 'fake-key')
+        Setting.set_setting('security_ai_enabled', 'true')
+        Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'turbo')
+        captured = {}
+
+        def fake_call(prompt):
+            captured['prompt'] = prompt
+            return {'ok': True, 'answer': 'shu gaping bilan yutqazding 😏'}
+
+        with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
+            r = staff_ai.proactive_message('rival2', mock=True,
+                                           their_text="men eng zo'r o'yinchiman",
+                                           context='- salom\n- nima gap')
+        self.assertTrue(r['ok'])
+        prompt = captured['prompt']
+        self.assertIn('GAPDA YENGILMAS', prompt)
+        self.assertIn("men eng zo'r o'yinchiman", prompt)
+        self.assertIn('nima gap', prompt)
+        self.assertIn("'@' BELGISINI QO'YMA", prompt)
+
+    def test_proactive_message_without_quote_still_forbids_tags(self):
+        # Gap berilmagan bo'lsa ham @belgilash taqiqlanadi
+        Setting.set_setting('gemini_api_key', 'fake-key')
+        Setting.set_setting('security_ai_enabled', 'true')
+        captured = {}
+
+        def fake_call(prompt):
+            captured['prompt'] = prompt
+            return {'ok': True, 'answer': 'bugun ham dangasalik qilyapsizmi?'}
+
+        with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
+            r = staff_ai.proactive_message('rival3')
+        self.assertTrue(r['ok'])
+        self.assertIn("'@' belgisiz", captured['prompt'])
+
+    def test_turbo_persona_has_hard_boundaries(self):
+        # Masxara — lekin oila/din/millat/tahdid: bu chegaradan chiqmaydi
+        self.assertIn('HAQORAT EMAS', staff_ai._MARKETING_PERSONA_TURBO)
+        self.assertIn('tahdid', staff_ai._MARKETING_PERSONA_TURBO.lower())
+
+    def test_mock_persona_no_family_or_threats(self):
+        self.assertIn('tahdid', staff_ai._MOCK_PERSONA.lower())
+        self.assertIn("'@username' YOZMA", staff_ai._MOCK_PERSONA)

@@ -173,7 +173,12 @@ class DailyMarketingTests(TestCase):
 
 
 class GroupRoastTests(TestCase):
-    """Guruh a'zolarini username orqali kinoyali murojaat qilish (marketing)."""
+    """Suhbatga qo'shilish: BELGILAMASDAN, aytilgan gapga reply qilib javob.
+
+    Eski xulq (a'zolarni @username bilan ommaviy belgilab yozish) YO'Q:
+    DONZO faqat shu suhbatda haqiqatan yozgan odamning xabariga reply qilib,
+    o'sha gapni chaynab tashlaydigan javob yozadi.
+    """
 
     def setUp(self):
         cache.clear()
@@ -183,8 +188,58 @@ class GroupRoastTests(TestCase):
         Setting.set_setting('telegram_bot_token', 'fake:token')
         Setting.set_setting('payment_report_chat_id', '-100999')  # operatsion — hech qachon yozilmaydi
         MarketingGroupMember.objects.all().delete()
+        bot._GROUP_LAST_MSG.clear()
+        bot._GROUP_CONVERSATIONS.clear()
+        bot._MARKETING_RECENT.clear()
 
-    def test_roasts_seen_member_by_username(self):
+    def _speak(self, chat_id, username, mid, text):
+        """Guruhda odam gap aytdi: xabar eslab qolinadi + suhbat faollashadi."""
+        bot._remember_group_message(chat_id, username, mid, text)
+        bot._track_group_conversation(chat_id, text)
+        bot._track_group_conversation(chat_id, 'yana bir gap')
+
+    def test_replies_to_last_speaker_without_any_mention(self):
+        bot._record_group_member('-100111', 'player1', 'Player One', 123)
+        self._speak('-100111', 'player1', 555, "men eng zo'r o'yinchiman")
+        sent = []
+        prompts = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        def fake_proactive(username, mock=False, their_text='', context=''):
+            prompts.append({'username': username, 'mock': mock,
+                            'their_text': their_text, 'context': context})
+            return {'ok': True,
+                    'answer': '@player1, gaping oqsoqol gapiga o\'xshamaydi 😏'}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        side_effect=fake_proactive):
+            bot._send_group_roast()
+
+        self.assertEqual(len(sent), 1)
+        payload = sent[0]
+        self.assertEqual(payload['chat_id'], '-100111')
+        # @belgilash YO'Q — ommaviy ping bo'lmaydi
+        self.assertNotIn('@', payload['text'])
+        self.assertIn('player1', payload['text'])
+        # @ o'rniga REPLY — aynan o'sha odamning o'sha gapiga
+        self.assertEqual(payload['reply_to_message_id'], 555)
+        self.assertTrue(payload['allow_sending_without_reply'])
+        # AI ga suhbatdoshNING AYTGAN GAPI berilgan — gapni chaynash uchun
+        self.assertEqual(prompts[0]['their_text'], "men eng zo'r o'yinchiman")
+        self.assertTrue(prompts[0]['mock'])
+        self.assertTrue(prompts[0]['context'])
+        # Eslab qolindi — bir odamga tez-tez yozilmasligi uchun
+        from apps.settings_app.models import MarketingGroupMember
+        row = MarketingGroupMember.objects.get(chat_id='-100111', username='player1')
+        self.assertIsNotNone(row.last_roast_at)
+        self.assertEqual(row.roast_count, 1)
+
+    def test_never_writes_to_member_who_never_spoke(self):
+        # A'zo DB'da bor, lekin bu suhbatda gap aytmagan — BELGILANMAYDI
         bot._record_group_member('-100111', 'player1', 'Player One', 123)
         sent = []
 
@@ -194,18 +249,56 @@ class GroupRoastTests(TestCase):
 
         with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
              mock.patch('apps.security.staff_ai.proactive_message',
-                        return_value={'ok': True, 'answer': '@player1, kaltakdan boshqa gap bilmaysizmi?'}):
+                        return_value={'ok': True, 'answer': 'salom'}):
             bot._send_group_roast()
 
-        self.assertEqual(len(sent), 1)
-        payload = sent[0]
-        self.assertEqual(payload['chat_id'], '-100111')
-        self.assertIn('@player1', payload['text'])
-        # Masxara qilingan — DB'da eslab qolindi (takrorlanmasligi uchun)
-        from apps.settings_app.models import MarketingGroupMember
-        row = MarketingGroupMember.objects.get(chat_id='-100111', username='player1')
-        self.assertIsNotNone(row.last_roast_at)
-        self.assertEqual(row.roast_count, 1)
+        self.assertEqual(sent, [])
+
+    def test_quiet_group_gets_nothing(self):
+        # Bitta xabar — suhbat faol emas: DONZO jim turadi
+        bot._record_group_member('-100111', 'player1')
+        bot._remember_group_message('-100111', 'player1', 777, 'salom')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        return_value={'ok': True, 'answer': 'salom'}):
+            bot._send_group_roast()
+
+        self.assertEqual(sent, [])
+
+    def test_stale_message_gets_nothing(self):
+        # Xabar juda eski (90 daqiqadan oshgan) — endi javob yozilmaydi
+        bot._record_group_member('-100111', 'player1')
+        self._speak('-100111', 'player1', 888, 'kechagi gap')
+        for rec in bot._GROUP_LAST_MSG['-100111'].values():
+            rec['ts'] -= 4 * 3600
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        return_value={'ok': True, 'answer': 'salom'}):
+            bot._send_group_roast()
+
+        self.assertEqual(sent, [])
+
+    def test_strip_pings_removes_mentions(self):
+        # AI baribir @yozib qo'ysa — yuborishdan oldin olib tashlanadi
+        self.assertEqual(bot._strip_pings('@player1, gaping zaif'),
+                         'player1, gaping zaif')
+        self.assertEqual(bot._strip_pings('gap shu. @ali gapirma'),
+                         'gap shu. ali gapirma')
+        # Email/manzil ichidagi @ tegilmaydi
+        self.assertEqual(bot._strip_pings('mail info@donzo.uz'),
+                         'mail info@donzo.uz')
 
     def test_members_persist_in_db(self):
         """A'zolar DB'da saqlanadi — bot restart bo'lsa ham eslab qoladi."""
@@ -220,9 +313,48 @@ class GroupRoastTests(TestCase):
         bot._record_group_member('-100111', 'player1')
         self.assertEqual(MarketingGroupMember.objects.filter(chat_id='-100111', username='player1').count(), 1)
 
+    def test_cooldown_blocks_repeat_answer(self):
+        # Shu odamga yaqinda javob yozilgan — yana yozilmaydi (zeriktirmaslik)
+        from django.utils import timezone
+        from apps.settings_app.models import MarketingGroupMember
+        bot._record_group_member('-100111', 'player1', 'Player One', 123)
+        MarketingGroupMember.mark_roasted('-100111', 'player1', when=timezone.now())
+        self._speak('-100111', 'player1', 999, 'yana men gapirdim')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        return_value={'ok': True, 'answer': 'salom'}):
+            bot._send_group_roast()
+
+        self.assertEqual(sent, [])
+
+    def test_respected_and_owner_users_are_skipped(self):
+        from apps.settings_app.models import Setting
+        Setting.set_setting('staff_ai_respected_users', 'player1')
+        bot._record_group_member('-100111', 'player1')
+        self._speak('-100111', 'player1', 101, 'men gapirdim')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        return_value={'ok': True, 'answer': 'salom'}):
+            bot._send_group_roast()
+
+        self.assertEqual(sent, [])
+
     def test_never_roasts_operational_group(self):
-        # Faqat operatsion (staff) guruhida a'zo ko'rilgan — hech narsa yuborilmaydi
+        # Faqat operatsion (staff) guruhida gap aytilgan — hech narsa yuborilmaydi
         bot._record_group_member('-100999', 'admin1')
+        self._speak('-100999', 'admin1', 303, 'staff guruhdagi gap')
         sent = []
 
         def fake_api(token, method, payload):
@@ -240,6 +372,7 @@ class GroupRoastTests(TestCase):
         from apps.settings_app.models import Setting
         Setting.set_setting('marketing_roast_enabled', 'false')
         bot._record_group_member('-100111', 'player1')
+        self._speak('-100111', 'player1', 404, 'gap aytdim')
         sent = []
 
         def fake_api(token, method, payload):
@@ -251,9 +384,10 @@ class GroupRoastTests(TestCase):
 
         self.assertEqual(len(sent), 0)
 
-    def test_ai_offline_uses_fallback_line(self):
-        """AI javob bermasa ham tayyor kinoyali qatordan biri ishlatiladi."""
+    def test_ai_offline_sends_nothing(self):
+        """AI javob bermasa — yuborilmaydi (bo'sh xabar ketmaydi)."""
         bot._record_group_member('-100111', 'player1')
+        self._speak('-100111', 'player1', 505, 'gap aytdim')
         sent = []
 
         def fake_api(token, method, payload):
@@ -265,4 +399,38 @@ class GroupRoastTests(TestCase):
                         return_value={'ok': False, 'answer': ''}):
             bot._send_group_roast()
 
-        self.assertEqual(len(sent), 0)  # javob yo'q bo'lsa — yuborilmaydi (yiqilmaydi)
+        self.assertEqual(len(sent), 0)
+
+    def test_latest_speaker_wins(self):
+        # Ikki odam gapirgan — eng oxirgi gap egasiga reply qilinadi
+        bot._record_group_member('-100111', 'player1')
+        bot._record_group_member('-100111', 'player2')
+        self._speak('-100111', 'player1', 601, 'birinchi gap')
+        self._speak('-100111', 'player2', 602, 'oxirgi gap')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        def fake_proactive(username, mock=False, their_text='', context=''):
+            return {'ok': True, 'answer': f'{username} ga javob'}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch('apps.security.staff_ai.proactive_message',
+                        side_effect=fake_proactive):
+            bot._send_group_roast()
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['reply_to_message_id'], 602)
+        self.assertIn('player2', sent[0]['text'])
+        self.assertNotIn('@', sent[0]['text'])
+
+    def test_last_message_of_helper(self):
+        bot._remember_group_message('-100111', 'Player2', 700, 'gapim')
+        hit = bot._last_message_of('-100111', {'player2'}, 600)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit[0], 700)
+        self.assertEqual(hit[1], 'gapim')
+        # Begona odam so'ralsa — topilmaydi (yolg'on "sen aytding" bo'lmaydi)
+        self.assertIsNone(bot._last_message_of('-100111', {'boshqa'}, 600))
