@@ -211,7 +211,9 @@ class DailyResetReportTests(TestCase):
         self.assertEqual(self.c1.transfers_count, 0)
         import json
         data = json.loads(Setting.get_setting(services._CARD_RESET_SNAPSHOT_KEY, ''))
-        self.assertEqual(data['date'], timezone.now().date().isoformat())
+        # Kun chegarasi BIZNES kuni (Toshkent) bo'yicha — `__date` lookup ham
+        # local vaqt zonasida hisoblanadi (UTC bilan aralashsa limit buziladi)
+        self.assertEqual(data['date'], timezone.localdate().isoformat())
         reset = data['resets'][0]
         self.assertEqual(reset['tail'], '1111')
         self.assertEqual(reset['yesterday_amount'], 850000.0)
@@ -243,7 +245,7 @@ class DailyResetReportTests(TestCase):
         self.assertEqual(m.call_count, 1)
         self.assertEqual(
             Setting.get_setting(services._CARD_RESET_REPORT_MARKER, ''),
-            timezone.now().date().isoformat(),
+            timezone.localdate().isoformat(),
         )
 
     def test_send_retries_until_success(self):
@@ -256,5 +258,5 @@ class DailyResetReportTests(TestCase):
         self.assertEqual(m.call_count, 2)
         self.assertEqual(
             Setting.get_setting(services._CARD_RESET_REPORT_MARKER, ''),
-            timezone.now().date().isoformat(),
+            timezone.localdate().isoformat(),
         )

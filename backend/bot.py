@@ -682,7 +682,8 @@ def _get_staff_quick_stats(user):
     from apps.orders.models import Order
     from apps.users.models import Role
 
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — `__date` lookup'i lokal vaqt zonasida hisoblanadi
+    today = timezone.localdate()
     is_admin = user.role in (Role.ADMIN, Role.SUPER_ADMIN)
     if is_admin:
         pending = Order.objects.filter(status='pending').count()

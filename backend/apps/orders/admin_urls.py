@@ -61,7 +61,8 @@ def operator_dashboard(request):
     Simplified dashboard for operators.
     Shows today's orders, pending orders, and their completed orders.
     """
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — `__date` lookup'i local vaqt zonasida hisoblanadi
+    today = timezone.localdate()
     week_ago = today - timedelta(days=7)
 
     is_admin = request.user.role in [Role.ADMIN, Role.SUPER_ADMIN]
@@ -132,7 +133,8 @@ def operator_stats(request):
     Returns completion metrics, hourly distribution, and trends.
     """
     user = request.user
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — `__date` lookup'i local vaqt zonasida hisoblanadi
+    today = timezone.localdate()
     
     # ── 1. Operator's completed orders ──
     operator_completed = Order.objects.filter(

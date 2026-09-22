@@ -1764,7 +1764,8 @@ def _scenario_handle(scenario: str, step: str, q: str, data: dict, username: str
         if step == 'filter':
             data['filter'] = ql.lower() or 'all'
             from apps.orders.models import Order
-            today = timezone.now().date()
+            # Biznes kuni (Toshkent) — `__date` lookup ham local vaqt zonasida
+            today = timezone.localdate()
             filt = ql.lower().strip()
             if filt in ('pending', 'kutilayotgan'):
                 orders = Order.objects.filter(status='pending').order_by('-created_at')[:10]
@@ -1802,7 +1803,8 @@ def _scenario_handle(scenario: str, step: str, q: str, data: dict, username: str
             from apps.users.models import User
             from apps.cardpay.models import CardTopupRequest
             period = ql.lower().strip()
-            today = timezone.now().date()
+            # Biznes kuni (Toshkent) — `__date` lookup ham local vaqt zonasida
+            today = timezone.localdate()
             if period in ('kecha', 'yesterday'):
                 start = today - timezone.timedelta(days=1)
                 end = today
@@ -1999,7 +2001,7 @@ def _daily_context() -> str:
         from apps.cardpay.models import CardTopupRequest, SuspiciousPayment
         from apps.users.models import User
         from apps.audit_log.models import AuditLog
-        today = timezone.now().date()
+        today = timezone.localdate()
         parts = []
         # Foydalanuvchilar
         new_users = User.objects.filter(created_at__date=today).count()
@@ -2046,7 +2048,7 @@ def _live_context() -> str:
         from apps.cardpay.models import CardTopupRequest, SuspiciousPayment, PaymentCard
         from apps.orders.models import Order
         from apps.users.models import User
-        today = timezone.now().date()
+        today = timezone.localdate()
         paid = CardTopupRequest.objects.filter(status='paid', paid_at__date=today)
         paid_count = paid.count()
         paid_sum = paid.aggregate(t=Sum('unique_amount'))['t'] or 0

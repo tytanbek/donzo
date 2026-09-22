@@ -590,7 +590,8 @@ class CardpayStatusView(APIView):
 
     def get(self, request):
         from django.db.models import Sum
-        today = timezone.now().date()
+        # `paid_at__date` local vaqt zonasida hisoblanadi — "bugun" ham local
+        today = timezone.localdate()
         paid_today = CardTopupRequest.objects.filter(status='paid', paid_at__date=today)
         total_today = paid_today.aggregate(t=Sum('unique_amount'))['t'] or 0
         pending = CardTopupRequest.objects.filter(status='pending').count()

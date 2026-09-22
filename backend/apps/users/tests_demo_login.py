@@ -56,8 +56,11 @@ class DemoLoginTests(TestCase):
         self.client.post('/api/v1/auth/demo-login/', {'role': 'customer'}, format='json')
         self.assertEqual(User.objects.filter(username='demo_customer').count(), 1)
 
+    @override_settings(DEBUG=False)
     def test_old_telegram_endpoints_are_gone(self):
         # Login tizimi butunlay o'chirilgan — eski endpointlar 404 qaytaradi.
+        # DEBUG=False (production kabi): aks holda Django debug 404 sahifasini
+        # chizishga urinadi — bu yerda muhim narsa 404 ning o'zi, sahifa emas.
         resp = self.client.post(
             '/api/v1/auth/telegram/webapp/',
             {'init_data': 'whatever'}, format='json',

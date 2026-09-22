@@ -47,7 +47,8 @@ class AuditLogListView(generics.ListAPIView):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated, IsAdmin])
 def admin_dashboard(request):
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — `__date` lookup'i lokal vaqt zonasida hisoblanadi
+    today = timezone.localdate()
     week_ago = today - timedelta(days=7)
 
     today_orders = Order.objects.filter(created_at__date=today)

@@ -245,7 +245,8 @@ def admin_users_analytics(request):
 
     Returns user analytics: registrations over time, role distribution, etc.
     """
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — statistika `__date` lookup'i bilan bir xil bo'lishi uchun
+    today = timezone.localdate()
     thirty_days_ago = today - timedelta(days=30)
 
     # Total users by role
@@ -306,7 +307,8 @@ def admin_analytics_dashboard(request):
     from apps.orders.models import Order
     from apps.payments.models import Payment
 
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — statistika `__date` lookup'i bilan bir xil bo'lishi uchun
+    today = timezone.localdate()
     thirty_days_ago = today - timedelta(days=30)
 
     # Revenue by payment provider
@@ -615,7 +617,8 @@ def admin_user_profile(request, pk):
 
     # ── Monthly activity (last 6 months) ──
     # Orders = ALL orders that month; revenue = only paid ones.
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — statistika `__date` lookup'i bilan bir xil bo'lishi uchun
+    today = timezone.localdate()
     # Aniq 6 oy orqaga: shu oyning 1-kunidan 5 oy oldingi oyning 1-kuni.
     _total_months = today.year * 12 + (today.month - 1) - 5
     months_ago = date(_total_months // 12, _total_months % 12 + 1, 1)

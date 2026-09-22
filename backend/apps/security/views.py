@@ -25,7 +25,8 @@ class SecurityDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        today = timezone.now().date()
+        # Biznes kuni (Toshkent) — `__date` lookup'i lokal vaqt zonasida
+        today = timezone.localdate()
         assessments = PaymentRiskAssessment.objects.filter(created_at__date=today)
         incidents = SecurityIncident.objects.all()
 

@@ -95,7 +95,12 @@ def _sweep_daily_resets():
     so the morning "KUNLIK LIMIT RESET" report can show what was reset.
     """
     from .models import PaymentCard
-    today = timezone.now().date()
+    # `period_started_at__date` Django tomonidan LOYAL (Asia/Tashkent) vaqt
+    # zonasida hisoblanadi. Shuning uchun "bugun" ham local bo'lishi SHART:
+    # aks holda har kuni 00:00–05:00 (Toshkent) oralig'ida har bir karta
+    # "kechagi" bo'lib ko'rinadi va har to'lovda hisoblagichlar nolga
+    # tushib, karta limitlari umuman ishlamaydi (rotatsiya bo'lmaydi).
+    today = timezone.localdate()
     stale = PaymentCard.objects.filter(auto_reset_daily=True).exclude(period_started_at__date=today)
     snapshot = [
         {
@@ -175,7 +180,10 @@ def _maybe_reset_period(card) -> bool:
     if not card.auto_reset_daily:
         return False
     now = timezone.now()
-    if card.period_started_at.date() < now.date():
+    # localtime: saqlangan vaqt UTC bo'lsa ham biznes kuni (Toshkent) bilan
+    # solishtiramiz — aks holda yarim tundan keyin hisoblagich har safar
+    # nolga tushib ketardi.
+    if timezone.localtime(card.period_started_at).date() < timezone.localdate():
         card.total_amount = 0
         card.transfers_count = 0
         card.period_started_at = now
@@ -800,7 +808,7 @@ def build_status_report() -> str:
     """Daily-status report for the Saved Messages 'status' command."""
     from django.db.models import Sum
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     s = get_settings()
     paid_today = CardTopupRequest.objects.filter(
         status='paid', paid_at__date=today,
@@ -1090,7 +1098,8 @@ def build_health_report() -> str:
 
     # 6) Stats
     from django.db.models import Sum
-    today = now.date()
+    # "Bugun to'langan" — biznes kuni (Toshkent), `paid_at__date` bilan bir xil
+    today = timezone.localdate()
     paid_qs = CardTopupRequest.objects.filter(status='paid', paid_at__date=today)
     paid_today = paid_qs.count()
     total_today = paid_qs.aggregate(t=Sum('unique_amount'))['t'] or 0
@@ -1168,7 +1177,7 @@ def build_card_daily_reset_report() -> str:
     from apps.settings_app.models import Setting
 
     _sweep_daily_resets()  # hali bajarilmagan bo'lsa, endi bajariladi
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     raw = Setting.get_setting(_CARD_RESET_SNAPSHOT_KEY, '')
     resets = []
@@ -1237,7 +1246,7 @@ def send_daily_card_reset_report() -> bool:
     """
     try:
         from apps.settings_app.models import Setting
-        today = timezone.now().date().isoformat()
+        today = timezone.localdate().isoformat()
         if Setting.get_setting(_CARD_RESET_REPORT_MARKER, '') == today:
             return False  # bugun allaqachon yuborilgan
         ok = _send_report(build_card_daily_reset_report())

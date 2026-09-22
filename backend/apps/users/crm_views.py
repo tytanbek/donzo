@@ -98,7 +98,8 @@ def admin_crm_stats(request):
       - live:        real-time counters (WS-aware)
     """
     period = request.query_params.get('period', 'daily')
-    today = timezone.now().date()
+    # Biznes kuni (Toshkent) — `__date` lookup'i lokal vaqt zonasida hisoblanadi
+    today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
     month_ago = today - timedelta(days=30)
