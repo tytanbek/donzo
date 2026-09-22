@@ -265,6 +265,32 @@ def diag_state(request):
     except Exception as exc:
         user_clients = [{'error': f'{type(exc).__name__}: {exc}'}]
 
+    # Marketing faolligi — guruhlarda DONZO haqiqatan yozayaptimi?
+    marketing = {}
+    try:
+        from django.db.models import Sum
+        from apps.settings_app.models import MarketingGroupStat
+        rows = MarketingGroupStat.objects.all().order_by('-last_reply_at')[:20]
+        now = datetime.now(timezone.utc)
+        marketing['groups'] = [
+            {
+                'chat_id': r.chat_id,
+                'title': r.chat_title,
+                'replies': r.replies_count,
+                'ads': r.ads_count,
+                'joins': r.joins_count,
+                'last_reply_age_s': (int((now - r.last_reply_at).total_seconds())
+                                     if r.last_reply_at else None),
+            }
+            for r in rows
+        ]
+        totals = MarketingGroupStat.objects.aggregate(
+            replies=Sum('replies_count'), ads=Sum('ads_count'),
+            joins=Sum('joins_count'))
+        marketing['totals'] = {k: (v or 0) for k, v in totals.items()}
+    except Exception as exc:
+        marketing['error'] = f'{type(exc).__name__}: {exc}'
+
     ai = {}
     try:
         from apps.security import gemini_ai, staff_ai
@@ -295,6 +321,7 @@ def diag_state(request):
             'user_client_fresh': uc_age is not None and uc_age < UC_FRESH_SECONDS,
         },
         'services': services,
+        'marketing': marketing,
         'ai': ai,
         'counts': counts,
         'user_clients': user_clients,
