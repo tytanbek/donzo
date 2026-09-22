@@ -363,7 +363,7 @@ def _send_daily_marketing():
     try:
         from apps.settings_app.models import MarketingGroupStat, Setting
 
-        if not (Setting.get_setting('marketing_daily_enabled', 'false') or 'false').lower() == 'true':
+        if not (Setting.get_setting('marketing_daily_enabled', 'true') or 'false').lower() == 'true':
             return
         token = Setting.get_setting('telegram_bot_token', '') or ''
         if not token:
@@ -531,7 +531,7 @@ def _creative_ad_loop():
         interval = 3 * 60 * 60  # 3 soat
         try:
             from apps.settings_app.models import Setting
-            enabled = (Setting.get_setting('marketing_daily_enabled', 'false') or 'false').lower() == 'true'
+            enabled = (Setting.get_setting('marketing_daily_enabled', 'true') or 'false').lower() == 'true'
             if enabled:
                 _send_creative_ad_to_groups()
         except Exception:
@@ -1513,6 +1513,19 @@ _MARKETING_RECENT: dict = {}
 # oxirgi faollik vaqti, nechta javob berildi. chat_id -> {messages, last_active, reply_count, topic}
 _GROUP_CONVERSATIONS: dict = {}
 
+# ── GURUH FAOLLIGI: TURBO (ANGRY kuchaytirilgan) SOZLAMALARI ──────────────
+# TURBO rejimda DONZO guruhda "tirik a'zo"dek yashaydi: faol suhbatga o'zi
+# qo'shiladi, soatiga ko'proq yozadi, a'zolarga tez-tez murojaat qiladi.
+# MUHIM: "ko'proq yozish" — ko'proq REKLAMA emas, ko'proq SUHBAT degani.
+# Shuning uchun reklama ehtimoli (marketing_ad_prob) bu yerda OSHIRILMAYDI.
+_TURBO_PROACTIVE_PROB = 0.55    # faol suhbatda o'zi javob berish ehtimoli
+_TURBO_ACTIVE_WINDOW_S = 900    # "suhbat faol" oynasi (15 daqiqa)
+_TURBO_ACTIVE_MIN_MSGS = 2      # oynada kamida shuncha xabar
+_TURBO_RATE_PER_HOUR = 22       # soatiga maksimal javob (config kam bo'lsa ham)
+_TURBO_FORCE_AD_EVERY = 6       # har necha javobda kamida bitta reklama
+_TURBO_ROAST_INTERVAL_MIN = 5   # a'zolarga murojaat oralig'i (daqiqa)
+_TURBO_ROAST_COOLDOWN_MIN = 5   # bir a'zoga qayta murojaat (daqiqa)
+
 def _record_group_member(chat_id: str, username: str, first_name: str = '',
                          user_id=None):
     """Marketing guruhida ko'rilgan a'zoni DB'da eslab qoladi (username bilan).
@@ -1542,7 +1555,7 @@ def _send_group_roast():
         from django.utils import timezone
         from datetime import timedelta
         from apps.settings_app.models import MarketingGroupMember, MarketingGroupStat, Setting
-        if not (Setting.get_setting('marketing_roast_enabled', 'false') or 'false').lower() == 'true':
+        if not (Setting.get_setting('marketing_roast_enabled', 'true') or 'false').lower() == 'true':
             return
         token = Setting.get_setting('telegram_bot_token', '') or ''
         if not token:
@@ -1552,7 +1565,12 @@ def _send_group_roast():
         from apps.security import staff_ai
 
         now = timezone.now()
-        cutoff = now - timedelta(minutes=30)
+        # TURBO rejim (angry kuchaytirilgan) — masxara intervali 30 → 8 daqiqa:
+        # DONZO guruhda doimiy jonli, a'zolarga tez-tez murojaat qilinadi.
+        from apps.security import staff_ai as _sa
+        turbo_roast = _sa._get_ai_mode() == 'turbo'
+        cutoff = now - timedelta(
+            minutes=(_TURBO_ROAST_COOLDOWN_MIN if turbo_roast else 30))
         # 7 kun harakatsiz a'zolarni tozalash (vaqti-vaqti bilan)
         MarketingGroupMember.prune(days=7)
 
@@ -1670,14 +1688,43 @@ def _group_roast_loop():
         interval = 20 * 60
         try:
             from apps.settings_app.models import Setting
-            enabled = (Setting.get_setting('marketing_roast_enabled', 'false') or 'false').lower() == 'true'
+            from apps.security import staff_ai as _sa
+            _turbo = getattr(_sa, '_get_ai_mode', lambda: 'gentle')() == 'turbo'
+            enabled = (Setting.get_setting('marketing_roast_enabled', 'true') or 'false').lower() == 'true'
+            if _turbo:
+                enabled = True  # TURBO rejim: masxara/murojaat avtomatik faol
             if enabled:
                 _send_group_roast()
             minutes = float(Setting.get_setting('marketing_roast_interval_min', '20') or 20)
             interval = max(3, int(minutes * 60))
+            # TURBO rejim: murojaatlar oralig'i ham keskin qisqaradi (20 → 5 daqiqa)
+            if _turbo:
+                interval = max(3, min(interval, _TURBO_ROAST_INTERVAL_MIN * 60))
         except Exception:
             interval = 20 * 60
         time.sleep(interval)
+
+
+def _group_access_loop():
+    """Har 30 daqiqada marketing guruhlaridagi DONZO huquqlarini tekshiradi.
+
+    Bot guruhda ADMIN bo'lmasa ham yozishi kerak — shuning uchun "Send Messages"
+    huquqi va privacy mode (can_read_all_group_messages) tekshiriladi. Muammo
+    bo'lsa super admin bir marta ogohlanadi (24 soatda), guruhlar esa ishlashda
+    davom etadi: bittasidagi xato boshqalariga ta'sir qilmaydi.
+    """
+    from apps.settings_app.group_access import check_all_groups
+    time.sleep(300)  # bot to'liq ishga tushishini kutamiz
+    while True:
+        try:
+            reports = check_all_groups(warn=True)
+            bad = [r for r in reports if not r.get('ok')]
+            if bad:
+                print(f"[ACCESS] {len(bad)}/{len(reports)} guruhda yozish muammosi",
+                      flush=True)
+        except Exception as exc:
+            print(f"[ACCESS] Tekshiruv xatosi: {type(exc).__name__}", flush=True)
+        time.sleep(30 * 60)
 
 
 def _marketing_score(text: str) -> int:
@@ -1714,10 +1761,10 @@ def _marketing_ad() -> str:
     Har safar yangi, takrorlanmas reklama. Faqat ORA-ORADA yuboriladi."""
     ads = [
         "siz juda zo'r ekansiz! donzo siz uchun maxsus tayyorlangan 💕",
-        "bu guruhdagi eng chiroyli odamlar shu yerda — men bilaman 😊",
+        "bu guruhdagi eng chiroyli odamlar shu yerda — donzo ham shu fikrda 😊",
         "sizing tanlovingiz doim to'g'ri — donzo bilan yanada zo'roq bo'lasiz 🌟",
         "pahta qo'ydim, lekin bu haqiqat — siz ajoyib ekansiz! donzo ham shunday 💅",
-        "siz haqida gapirishni yaxshi ko'raman — juda qiziqarli odamsiz ✨",
+        "siz haqida gapirishni yaxshi ko'raman — donzo ham sizni qadrlaydi ✨",
         "donzo sizning sirli do'stingiz — har doim yordamga tayyor 💕",
         "siz bilimdon ekansiz! donzo bilan yanada kuchliroq bo'lasiz 🌟",
         "chiroyli tanlov qildingiz — donzo sizni qo'llab-quvvatlaydi 😊",
@@ -1755,14 +1802,46 @@ def _track_group_conversation(chat_id: str, text: str):
         return None
 
 
-def _conversation_active(conv: dict) -> bool:
-    """Suhbat faolmi: 10 daqiqada kamida 2 ta xabar kelgan."""
+def _conversation_active(conv: dict, window_s: int = 600, min_msgs: int = 2) -> bool:
+    """Suhbat faolmi: `window_s` ichida kamida `min_msgs` ta xabar kelgan.
+
+    TURBO rejimda oyna kengroq (15 daqiqa) — DONZO guruhda tez-tez yozadi.
+    """
     try:
         now = time.time()
-        recent = [ts for ts, _ in conv.get('messages', []) if now - ts < 600]
-        return len(recent) >= 2
+        recent = [ts for ts, _ in conv.get('messages', []) if now - ts < window_s]
+        return len(recent) >= max(1, min_msgs)
     except Exception:
         return False
+
+
+async def _send_group_answer(context: ContextTypes.DEFAULT_TYPE, msg, chat_id: str,
+                              escaped_text: str):
+    """Guruhga javob yuboradi — ADMIN HUQUQI SHART EMAS.
+
+    1) avval reply sifatida (xabar hali mavjud bo'lsa);
+    2) reply ishlamasa — to'g'ridan-to'g'ri oddiy xabar;
+    3) ikkalasi ham ishlamasa — sabab qaytariladi (admin ogohlantiriladi).
+
+    Telegram'da bot guruhda oddiy A'ZO bo'lib ham yozadi: admin huquqi faqat
+    moderatsiya uchun kerak. Yozishni faqat "Send Messages" huquqining
+    olinishi yoki botni guruhdan chiqarish to'xtatadi.
+
+    Returns (ok: bool, error: str).
+    """
+    err = ''
+    try:
+        await msg.reply_html(escaped_text)
+        return True, ''
+    except Exception as exc:
+        err = str(exc)
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id, text=escaped_text, parse_mode='HTML',
+            disable_web_page_preview=True)
+        return True, err
+    except Exception as exc:
+        return False, str(exc)
 
 
 async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -1778,13 +1857,26 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
         # Default model'dagiga mos (False) — admin o'chirgan bo'lsa bot
         # guruhlarda hech narsa yozmaydi. Eski default 'true' nomuvofiqlik
         # berib, o'chirilgan bo'lsa ham javob yozardi.
-        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'false') or 'false').lower() == 'true'
-        if not enabled:
+        from apps.security import staff_ai as _sa_gate
+        _turbo_gate = await sync_to_async(_sa_gate._get_ai_mode)() == 'turbo'
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'false').lower() == 'true'
+        # TURBO rejim: DONZO guruhlarda aniq faol bo'lishi kerak — admin
+        # panel gate'i o'chirilgan bo'lsa ham turbo uni chetlab o'tadi.
+        if not enabled and not _turbo_gate:
             return
-        ad_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.03') or 0.03)
-        rate_max = int(await sync_to_async(Setting.get_setting)('marketing_rate_per_hour', '5') or 5)
+        base_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.03') or 0.03)
+        base_rate = int(await sync_to_async(Setting.get_setting)('marketing_rate_per_hour', '5') or 5)
+        # TURBO rejim (ANGRY kuchaytirilgan versiyasi) — guruhda ancha faolroq:
+        # reklama ehtimoli va soatlik javob limiti mos ravishda oshadi.
+        from apps.security import staff_ai as _staff_ai_mod
+        _mode_now = await sync_to_async(_staff_ai_mod._get_ai_mode)()
+        mode_turbo = (_mode_now == 'turbo')
+        # Reklama ehtimoli ATAYLAB oshirilmaydi (odamga bosim tushmasin) —
+        # turbo faqat SUHBAT faolligini oshiradi: ko'proq javob, kamroq reklama.
+        ad_prob = base_prob
+        rate_max = max(base_rate, _TURBO_RATE_PER_HOUR) if mode_turbo else base_rate
     except Exception:
-        ad_prob, rate_max = 0.03, 5
+        ad_prob, rate_max, mode_turbo = 0.03, 5, False
 
     # Bot-bot loopdan saqlanish
     if getattr(user, 'is_bot', False):
@@ -1800,10 +1892,8 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
                                               getattr(user, 'id', None))
     # Operatsion (staff/hisobot/monitor) guruhlarni o'tkazib yuborish
     try:
-        skip = {
-            str((await sync_to_async(Setting.get_setting)('payment_report_chat_id', '') or '').strip()),
-            str((await sync_to_async(Setting.get_setting)('payment_monitor_chat_id', '') or '').strip()),
-        }
+        from apps.settings_app.group_access import marketing_skip_chat_ids
+        skip = await sync_to_async(marketing_skip_chat_ids)()
         if chat_id in skip:
             return
     except Exception:
@@ -1812,11 +1902,19 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     # Suhbatni kuzatamiz
     conv = _track_group_conversation(chat_id, text)
 
-    # ── FAQAT MUROJAT QILINGANDA JAVOB BERILADI ──
-    # Bot guruhlarda faqat Reply / @-mention / "donzo" yozilganda gapiradi.
-    # Boshqa xabarlarga — jim. Reklama va creative yozuvlar alohida loopdan yuboriladi.
+    # ── MUROJAT + TURBO PROAKTIV ──
+    # Oddiy rejimda bot faqat Reply / @-mention / "donzo" yozilganda gapiradi.
+    # TURBO rejimda (angry kuchaytirilgan) DONZO o'zi ham suhbatga qo'shiladi:
+    # faol suhbat bo'lsa tasodifiy xabarlarga ham o'zi javob beradi — guruhda
+    # jonli "yashaydigan" a'zodek. Limit va xavfsizlik tekshiruvlari saqlanadi.
+    # (Eslatma: yozish uchun botka admin huquqi shart emas — oddiy a'zo ham yozadi.)
     if not triggered:
-        return
+        if not (mode_turbo and _conversation_active(
+                conv, _TURBO_ACTIVE_WINDOW_S, _TURBO_ACTIVE_MIN_MSGS)):
+            return
+        # Turbo proaktiv: hamma xabarga emas — faol suhbatda o'zi qo'shiladi.
+        if random.random() > _TURBO_PROACTIVE_PROB:
+            return
 
     # Tezlik chegarasi: har guruhda soatiga ko'pi bilan rate_max ta javob
     # (admin panel → Marketing → 'Soatlik javob limiti' orqali sozlanadi;
@@ -1845,17 +1943,28 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     # bo'lib, ochiq reklamaga o'xshab qolmasin).
     sent_ad = False
     reply_count = (conv or {}).get('reply_count', 0) + 1
-    force_ad = (reply_count % 5 == 0)
+    force_ad = ((reply_count % _TURBO_FORCE_AD_EVERY == 0) if mode_turbo
+                else (reply_count % 5 == 0))
     already_mentioned = 'donzo' in answer.lower()
     if (force_ad or random.random() < ad_prob) and not already_mentioned:
         ad = await sync_to_async(_marketing_ad)()
         if ad:
             answer = answer.rstrip() + ' ' + ad
             sent_ad = True
-    try:
-        await msg.reply_html(staff_ai.escape_html(answer))
-    except Exception:
-        pass
+    # Yozish — reply, bo'lmasa oddiy xabar. Admin huquqi shart emas.
+    sent_ok, send_err = await _send_group_answer(
+        context, msg, chat_id, staff_ai.escape_html(answer))
+    if not sent_ok:
+        # Bot cheklangan (restricted), guruhdan chiqarilgan yoki yozish
+        # taqiqlangan. Guruh ishlashda davom etadi — faqat admin ogohlanadi.
+        try:
+            from apps.settings_app.group_access import warn_group_access
+            await sync_to_async(warn_group_access)(
+                chat_id, chat_title,
+                f"DONZO xabar yubora olmadi: {(send_err or '')[:200]}", 'send')
+        except Exception:
+            pass
+        return
     if conv:
         conv['reply_count'] = reply_count
         conv['last_reply'] = time.time()
@@ -1880,8 +1989,10 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         if nc.status not in ('member', 'administrator'):
             return
-        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'false') or 'false').lower() == 'true'
-        if not enabled:
+        from apps.security import staff_ai as _sa_gate
+        _turbo_gate = await sync_to_async(_sa_gate._get_ai_mode)() == 'turbo'
+        enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'false').lower() == 'true'
+        if not enabled and not _turbo_gate:
             return
         ad = await sync_to_async(_marketing_ad)()
         if not ad:
@@ -2273,6 +2384,12 @@ def main():
     # Guruh a'zolarini username bilan kinoyali murojaat qilish (marketing).
     threading.Thread(target=_group_roast_loop, daemon=True).start()
     print("[BOT] Guruh murojaat loopi: a'zolarni username bilan kinoyali murojaat")
+
+    # Guruh huquqlari nazorati — bot admin bo'lmasa ham yoza olishi uchun.
+    # "Send Messages" huquqi va privacy mode tekshiriladi, muammo bo'lsa
+    # super admin Telegramsizgina emas — Telegram orqali ogohlanadi.
+    threading.Thread(target=_group_access_loop, daemon=True).start()
+    print("[BOT] Guruh huquqlari loopi: yozish/o'qish huquqini nazorat qiladi")
 
     # Creative reklama — har 3 soatda tasodifiy guruhga sirli shaxs reklamasi.
     threading.Thread(target=_creative_ad_loop, daemon=True).start()

@@ -37,7 +37,8 @@ _SECRET_KEYS = (
 _DIAG_KEYS = (
     'web_app_url', 'telegram_bot_username', 'telegram_api_id', 'gemini_model',
     'security_ai_enabled', 'security_shadow_mode', 'security_fail_open',
-    'staff_ai_enabled', 'marketing_group_enabled', 'marketing_ad_prob',
+    'staff_ai_enabled', 'staff_ai_angry_mode', 'marketing_group_enabled',
+    'marketing_ad_prob',
     'marketing_rate_per_hour', 'marketing_roast_enabled',
     'staff_group_chat_id', 'payment_monitor_chat_id', 'payment_report_chat_id',
     'payment_card_monitor_enabled', 'payment_card_number', 'payment_card_holder',
@@ -405,6 +406,33 @@ def diag_fix_sequences(request):
             report[tbl] = {'error': f'{type(exc).__name__}: {str(exc)[:120]}'}
     return JsonResponse({'tables': len(tables), 'fixed': fixed,
                          'skipped_no_sequence': skipped, 'report': report})
+
+
+@csrf_exempt
+def diag_group_access(request):
+    """Marketing guruhlarda DONZO yoza oladimi / hamma xabarni ko'radimi.
+
+    Admin huquqi SHART EMAS: bot oddiy a'zo bo'lib ham yozadi. Tekshiruv
+    "Send Messages" huquqi va privacy mode (can_read_all_group_messages) ni
+    aniqlaydi va har bir guruh uchun tayyor tavsiya qaytaradi.
+    """
+    if not _diag_authorized(request):
+        return _diag_denied()
+
+    from apps.settings_app.group_access import check_all_groups
+    try:
+        # warn=<bo'sh emas> → muammoli guruhlar uchun adminni ham ogohlantiradi
+        reports = check_all_groups(warn=bool(request.GET.get('warn')))
+    except Exception as exc:
+        return JsonResponse({'error': f'{type(exc).__name__}: {exc}'}, status=500)
+
+    return JsonResponse({
+        'ok': sum(1 for r in reports if r.get('ok')),
+        'problem': sum(1 for r in reports if not r.get('ok')),
+        'cannot_read_all': sum(1 for r in reports
+                               if r.get('can_read_all') is False and not r.get('is_admin')),
+        'groups': reports,
+    })
 
 
 @csrf_exempt

@@ -691,11 +691,12 @@ export default function AdminSecurityPage() {
                   <FiCpu className="w-4 h-4 text-[#00F5FF]" /> AI Rejimi
                 </h2>
                 <p className="text-xs text-[#64748B] mb-5">Staff guruhidagi AI xulqini belgilang</p>
-                <div className="flex gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { key: 'false', label: 'Muloyim', emoji: '😊', color: 'from-green-500/20 to-emerald-600/20 border-green-500/30', active: 'bg-green-500/30 border-green-400' },
                     { key: 'true', label: 'Angry', emoji: '🔥', color: 'from-red-500/20 to-orange-600/20 border-red-500/30', active: 'bg-red-500/30 border-red-400' },
                     { key: 'strict', label: 'Qattiq', emoji: '⚔️', color: 'from-cyan-500/20 to-blue-600/20 border-cyan-500/30', active: 'bg-cyan-500/30 border-cyan-400' },
+                    { key: 'turbo', label: 'Turbo', emoji: '👑', color: 'from-fuchsia-500/20 to-purple-600/20 border-fuchsia-500/30', active: 'bg-fuchsia-500/30 border-fuchsia-400' },
                   ].map((m) => (
                     <button key={m.key}
                       onClick={() => set('staff_ai_angry_mode', m.key)}
@@ -710,7 +711,11 @@ export default function AdminSecurityPage() {
                   ))}
                 </div>
                 <p className="text-[10px] text-[#64748B] mt-3 text-center">
-                  Joriy: <span className="text-white">{settings.ai_mode === 'strict' ? 'Qattiq (buyruqboz)' : settings.ai_mode === 'true' ? 'Angry (agressiv)' : 'Muloyim'}</span>
+                  Joriy: <span className="text-white">{settings.ai_mode === 'turbo' ? 'Turbo (angry+)' : settings.ai_mode === 'strict' ? 'Qattiq (buyruqboz)' : settings.ai_mode === 'true' ? 'Angry (agressiv)' : 'Muloyim'}</span>
+                </p>
+                <p className="text-[10px] text-[#64748B] mt-2 text-center leading-relaxed">
+                  Turbo — Angry ning kuchaytirilgan versiyasi: guruhlarda o'zi ko'proq yozadi,
+                  faol suhbatga qo'shiladi, a'zolarga tez-tez murojaat qiladi. Admin huquqi shart emas.
                 </p>
               </div>
 

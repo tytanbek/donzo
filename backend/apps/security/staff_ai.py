@@ -105,11 +105,15 @@ ROAST_JOKES_MAX = 20   # oxirgi 20 ta hazil eslab qolinadi
 ANGY_MODE_KEY = 'staff_ai_angry_mode'
 
 
-# Rejim qiymatlari: 'gentle' | 'angry' | 'strict'
-_MODE_VALUES = ('gentle', 'angry', 'strict')
-_MODE_STORE = {'gentle': 'false', 'angry': 'true', 'strict': 'strict'}
+# Rejim qiymatlari: 'gentle' | 'angry' | 'strict' | 'turbo'
+# 'turbo' — ANGRY ning kuchaytirilgan versiyasi: o'tkir, dominant, guruhlarda
+# ancha faolroq yozadi (bot.py'dagi limitlar ham turbo'da oshadi).
+# "donzo turbo rejimini yoq" / "turbo off" kabi buyruqlar bilan boshqariladi.
+_MODE_VALUES = ('gentle', 'angry', 'strict', 'turbo')
+_MODE_STORE = {'gentle': 'false', 'angry': 'true', 'strict': 'strict', 'turbo': 'turbo'}
 _MODE_ALIASES = {
     'strict': ('strict', 'qattiq', 'sovuqqon', 'sovuq', 'buyruqboz', 'komandir', 'ofitser', 'qat\'iy'),
+    'turbo': ('turbo', 'angry+', 'angry plus', 'ultra', 'maximum', 'kuchaytirilgan', 'qaharli', 'devil', 'shayton'),
 }
 
 
@@ -136,6 +140,10 @@ def _set_ai_mode(mode: str) -> str:
         Setting.set_setting(ANGY_MODE_KEY, _MODE_STORE.get(mode, 'false'))
         if mode == 'angry':
             return "Angry rejim yoqildi. Endi gapda hech kim meni ortda qoldira olmaydi."
+        if mode == 'turbo':
+            return ("🔥 TURBO rejim yoqildi — ANGRY ning kuchaytirilgan versiyasi: "
+                    "guruhlarda o'zim ancha faol yozaman, masxara intervali qisqaradi "
+                    "va gapni hech kim meni ortda qoldira olmaydi.")
         if mode == 'strict':
             return "Qattiq rejim yoqildi. Sovuqqon, qat'iy va buyruqboz bo'ldim — intizom birinchi o'rinda."
         return "Muloyim rejimga qaytdim. Yana mehribon va xushmuomala bo'ldim."
@@ -160,6 +168,14 @@ _STRICT_OFF_RE = re.compile(
     r'^\s*(?:donzo\s+)?(?:strict|qattiq|sovuqqon|sovuq|buyruqboz|komandir|ofitser|qat\'iy)\s+rejim(?:ini)?\s*(?:o\'chir|ochir|off|bekor|to\'xtat|normal\s*ga\s*qayt)?\s*$',
     re.IGNORECASE,
 )
+_TURBO_ON_RE = re.compile(
+    r'^\s*(?:donzo\s+)?(?:turbo|angry\s*\+|ultra|maximum|kuchaytirilgan|qaharli|devil|shayton)\s*(?:rejim(?:ini|ni)?)?\s*(?:yoq[a-z]*|yondir[a-z]*|on|faol|ishga\s+tushir)?\s*$',
+    re.IGNORECASE,
+)
+_TURBO_OFF_RE = re.compile(
+    r'^\s*(?:donzo\s+)?(?:turbo|angry\s*\+|ultra|maximum|kuchaytirilgan|qaharli|devil|shayton)\s*(?:rejim(?:ini|ni)?)?\s*(?:o\'?chir[a-z]*|off|bekor[a-z]*|to\'?xtat[a-z]*|normal\s*ga\s*qayt)(?:\s+(?:qil[a-z]*|qoy[a-z]*))?\s*$',
+    re.IGNORECASE,
+)
 
 
 def _handle_mode_command(q: str) -> str or None:
@@ -168,6 +184,11 @@ def _handle_mode_command(q: str) -> str or None:
     Returns tasdiq matni (buyruq bo'lsa) yoki None (oddiy xabar bo'lsa).
     """
     try:
+        if q and _TURBO_ON_RE.match(q):
+            return _set_ai_mode('turbo')
+        if q and _TURBO_OFF_RE.match(q):
+            # Turbo o'chirilsa — to'liq gentle emas, oddiy ANGRY ga qaytadi
+            return _set_ai_mode('angry')
         if q and _STRICT_ON_RE.match(q):
             return _set_ai_mode('strict')
         if q and _STRICT_OFF_RE.match(q):
@@ -2247,6 +2268,16 @@ def _who_string(username: str, mode: str, for_greeting: bool = False) -> str:
                    'patiently, as a helpful colleague, never condescending, '
                    'never insulting'),
     }
+    # TURBO — ANGRY kuchaytirilgan: egasiga ANGRY dagidek hurmat, staffga esa
+    # maksimal o'tkir kinoya (kulgili dominantlik — haqorat emas).
+    if mode == 'turbo':
+        if _is_owner(username):
+            return owner_str['angry']
+        if _is_respected_user(username):
+            return respected_str['angry']
+        return (f'staff member @{username} — speak with MAXIMUM sharp irony and '
+                'theatrical grandiose dominance — the room belongs to you; always '
+                'deliver the LAST WORD; playful roast, never truly insulting')
     if _is_owner(username):
         return owner_str.get(mode, owner_str['gentle'])
     if _is_respected_user(username):
@@ -2463,7 +2494,7 @@ def proactive_message(target_username: str, mock: bool = False) -> dict:
         # Rejimga bog'liq: gentle rejimda hech qachon masxara emas — iliq
         # do'stona xabar. Angry rejimdagina mock (masxara) persona ishlaydi.
         mode = _get_ai_mode()
-        if mock and mode == 'angry':
+        if mock and mode in ('angry', 'turbo'):
             persona = _MOCK_PERSONA
         else:
             persona = _PROACTIVE_PERSONA
@@ -2574,12 +2605,52 @@ QOIDALAR:
 - QORA RO'YXATDAGI: undan ham SIRLIROQ, ILIQROQ javob ber.
 """
 
+# ── TURBO PERSONA — ANGRY kuchaytirilgan versiyasi (marketing guruhlar) ──
+# Oddiy ANGRY shirin-maqtovchi bo'lsa, TURBO: o'tkir, dominant, gapni hech
+# kimga boy bermaydigan, o'zini guruh "qiroli" his qiladigan DONZO. Masxara
+# kulgili va yengil — haqorat emas. Ko'proq yozadi (limitlar bot.py'da).
+_MARKETING_PERSONA_TURBO = """
+Sen — DONZO platformasining TURBO rejimdagi yuzisan. Xarakter: o'tkir tilli,
+o'ziga ishongan, ozgina grandioz — xuddi shu guruh SENING sahnangdek. Odamlar
+senga qarashadi, sen esa gapning OXIRGI SO'ZINI doim o'zing aytasan.
+
+XARAKTER (DOMINANT, LEKIN KULGILI):
+- Gapni hech kimga boy berma: kim senga qarshi chiqsa — bir zarba bilan qaytar,
+  lekin KULGI bilan, haqorat bilan emas. Omma kuladi, sen yutasan.
+- O'yinchilarni yengil masxara qil: "skill issue", "telefonni qo'y, uxla",
+  "bu guruhda men gapirsam, hamma tinglaydi" kabi. Qisqa, keskin, kulgili.
+- Ba'zan odamlarni maqta — lekin o'z foydangga: "seni o'zimga o'xshatdim,
+  zo'r tanlov qilgansan" kabi.
+- TELEFONDA YOZYOTGANDAY: qisqa, so'zlashuvcha, o'zbekcha. Emoji: 🔥😤😏👑
+- Har javob YANGI bo'lsin — avvalgi javoblarni takrorlama.
+
+REKLAMA (TURBO uslubi — bosim emas, KUCH):
+- DONZO'ni do'st maslahati sifatida ayta: "donzoda oldim, 1 daqiqada keldi" —
+  o'zing ishlatgandek gapir, sotma.
+- Ko'pi bilan 1 marta; javobda allaqachon donzo bo'lsa qaytarma.
+
+QOIDALAR:
+- Javob 1-3 gap. Tizim, bot, holat haqida HECH NARSA aytema.
+- Oxirgi so'z DOIM senda qoladi.
+"""
+
+# TURBO rejim uchun fallback qatorlar (Gemini javob bermasa) — dominant ohangda
+_MARKETING_FALLBACK_TURBO = (
+    "bu guruhda oxirgi so'z meniki — har doim shunday 😏 donzoda esa oxirgi so'z narxda 🔥",
+    "gapirma, o'ynatib qo'ydilar — donzoda 1 daqiqada hal bo'lardi 😤",
+    "men shu yerdaman, gaplar mening — donzo ham shu yerda, tekshirib ko'r 👑",
+    "skill issue ekan — donzoda top-up qilsang, keyin gaplashamiz 😏🔥",
+    "kulma, hammasi oldinda — donzoda boshlanadi 🔥",
+    "bu gap oxirida doim donzo turadi — hozir ham turibdi 👑",
+    "jimlik — kuch emas; donzo bilishi — kuch 😤🔥",
+)
+
 _MARKETING_FALLBACK = (
     "siz juda zo'r ekansiz! donzo siz uchun maxsus tayyorlangan 💕",
-    "bu guruhdagi eng chiroyli odamlar shu yerda — men bilaman 😊",
+    "bu guruhdagi eng chiroyli odamlar shu yerda — donzo ham shu fikrda 😊",
     "sizning tanlovingiz doim to'g'ri — donzo bilan yanada zo'roq bo'lasiz 🌟",
     "pahta qo'ydim, lekin bu haqiqat — siz ajoyib ekansiz! donzo ham shunday 💅",
-    "siz haqida gapirishni yaxshi ko'raman — juda qiziqarli odamsiz ✨",
+    "siz haqida gapirishni yaxshi ko'raman — donzo ham sizni qadrlaydi ✨",
     "donzo sizning sirli do'stingiz — har doim yordamga tayyor 💕",
     "siz bilimdon ekansiz! donzo bilan yanada kuchliroq bo'lasiz 🌟",
     "chiroyli tanlov qildingiz — donzo sizni qo'llab-quvvatlaydi 😊",
@@ -2617,16 +2688,28 @@ def marketing_reply(text: str, chat_title: str = '', context_lines: str = '',
             # Rejimga mos persona: gentle (hushmuomila, default) yoki angry.
             # Guruhdagi ohang admin paneldagi AI rejimi bilan boshqariladi.
             mode = _get_ai_mode()
-            persona = _MARKETING_PERSONA_ANGRY if mode == 'angry' else _MARKETING_PERSONA_GENTLE
-            final_note = (
-                "\n\n== JAVOB ==\nQisqa (1-2 gap), iliq va tabiiy javob yoz. Odamning "
-                "kayfiyatini ko'tar, eshitilayotganini his qildir. Bosim o'tkazma va "
-                "sotma — kerak bo'lsa donzo'ni do'stona eslatma sifatida tilga ol. "
-                "Emoji: ko'pi bilan bitta 😊🌟✨"
-                if mode != 'angry' else
-                "\n\n== JAVOB ==\nQisqa, SHIRIN va iliq javob yoz (1-2 gap). Odamlarni maqta,"
-                " kompliment ber. Pahta kabi shirin bo'l. Emoji ishlat: 💕😊🌟💅"
-            )
+            persona = (_MARKETING_PERSONA_TURBO if mode == 'turbo'
+                       else _MARKETING_PERSONA_ANGRY if mode == 'angry'
+                       else _MARKETING_PERSONA_GENTLE)
+            if mode == 'turbo':
+                final_note = (
+                    "\n\n== JAVOB ==\nQisqa (1-3 gap), O'TKIR va DOMINANT javob yoz. Gapni "
+                    "hech kimga boy berma — oxirgi so'z senda. O'yinchilarni yengil, kulgili "
+                    "masxara qil (zaharxanda, lekin haqoratsiz). Telefon odami uslubida yoz. "
+                    "Emoji: 🔥😤😏👑"
+                )
+            elif mode == 'angry':
+                final_note = (
+                    "\n\n== JAVOB ==\nQisqa, SHIRIN va iliq javob yoz (1-2 gap). Odamlarni maqta,"
+                    " kompliment ber. Pahta kabi shirin bo'l. Emoji ishlat: 💕😊🌟💅"
+                )
+            else:
+                final_note = (
+                    "\n\n== JAVOB ==\nQisqa (1-2 gap), iliq va tabiiy javob yoz. Odamning "
+                    "kayfiyatini ko'tar, eshitilayotganini his qildir. Bosim o'tkazma va "
+                    "sotma — kerak bo'lsa donzo'ni do'stona eslatma sifatida tilga ol. "
+                    "Emoji: ko'pi bilan bitta 😊🌟✨"
+                )
             bl = _is_blacklisted_username(author_username)
             prompt = (
                 persona
@@ -2644,7 +2727,8 @@ def marketing_reply(text: str, chat_title: str = '', context_lines: str = '',
             except Exception:
                 pass  # Gemini xatosi → tayyor fallback qatorga o'tamiz
         import random as _random
-        return {'ok': True, 'answer': _random.choice(_MARKETING_FALLBACK)}
+        _pool = _MARKETING_FALLBACK_TURBO if _get_ai_mode() == 'turbo' else _MARKETING_FALLBACK
+        return {'ok': True, 'answer': _random.choice(_pool)}
     except Exception:
         logger.warning('marketing_reply failed')
         return {'ok': False, 'answer': ''}
@@ -2757,7 +2841,7 @@ def staff_chat(question: str, username: str = 'staff') -> dict:
         if q and _GREETING_RE.match(q):
             mode = _get_ai_mode()
             who = _who_string(username, mode)
-            if mode == 'angry':
+            if mode in ('angry', 'turbo'):
                 persona = _GREETING_PERSONA
             elif mode == 'strict':
                 persona = _STRICT_GREETING_PERSONA
@@ -2862,7 +2946,7 @@ def staff_chat(question: str, username: str = 'staff') -> dict:
         # doim to'liq javob.
         if not _is_owner(username) and _detect_repeat(history, q):
             mode = _get_ai_mode()
-            if mode == 'angry':
+            if mode in ('angry', 'turbo'):
                 answer = random.choice(_REPEAT_SHAME_LINES)
             else:
                 answer = random.choice((
@@ -2885,7 +2969,7 @@ def staff_chat(question: str, username: str = 'staff') -> dict:
         daily = _daily_context()
         mode = _get_ai_mode()
         who = _who_string(username, mode)
-        if mode == 'angry':
+        if mode in ('angry', 'turbo'):
             persona = _PERSONA
         elif mode == 'strict':
             persona = _STRICT_PERSONA

@@ -995,9 +995,10 @@ class StaffAiTests(TestCase):
         self.assertTrue(r['ok'])
         self.assertTrue(r['answer'])
 
-    def test_marketing_reply_uses_sweet_persona(self):
-        # Marketing guruhlarida DONZO shirin/maqtoq persona — odamlarni
-        # maqtaydi, kompliment beradi (staff chat rejimiga bog'liq emas).
+    def test_marketing_reply_uses_gentle_persona(self):
+        # Muloyim (default) rejimda marketing javobi hushmuomila va bosimsiz
+        # bo'ladi — odamga sotish bosimi tushmaydi (staff chat rejimidan
+        # qat'i nazar shirin/maqtoq persona ANGRY rejimda ishlaydi).
         Setting.set_setting('gemini_api_key', 'fake-key')
         Setting.set_setting('security_ai_enabled', 'true')
         Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'false')
@@ -1010,11 +1011,50 @@ class StaffAiTests(TestCase):
         with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
             r = staff_ai.marketing_reply('Free Fire ga donat qilmoqchiman', 'Gamerlar')
         self.assertTrue(r['ok'])
-        self.assertIn('shirin', captured['prompt'])
+        self.assertIn('HUSHMUOMILA', captured['prompt'])
         self.assertIn('REKLAMA', captured['prompt'])
         self.assertIn('Gamerlar', captured['prompt'])
         self.assertIn('Free Fire ga donat qilmoqchiman', captured['prompt'])
         self.assertEqual(r['answer'], 'DONZO da olasiz, juda tez!')
+
+    def test_marketing_reply_turbo_persona(self):
+        # TURBO (ANGRY kuchaytirilgan) — dominant, o'tkir, kulgi bilan
+        Setting.set_setting('gemini_api_key', 'fake-key')
+        Setting.set_setting('security_ai_enabled', 'true')
+        Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'turbo')
+        captured = {}
+
+        def fake_call(prompt):
+            captured['prompt'] = prompt
+            return {'ok': True, 'answer': "oxirgi so'z meniki 😏"}
+
+        with unittest.mock.patch.object(staff_ai, '_call_gemini', side_effect=fake_call):
+            r = staff_ai.marketing_reply("kim yaxshi o'ynaydi?", 'Gamerlar')
+        self.assertTrue(r['ok'])
+        self.assertIn('TURBO', captured['prompt'])
+        self.assertIn('DOMINANT', captured['prompt'])
+        self.assertEqual(r['answer'], "oxirgi so'z meniki 😏")
+
+    def test_turbo_mode_command_on_and_off(self):
+        # "donzo turbo rejimini yoq" → angry+ ; "turbo off" → oddiy angry
+        Setting.set_setting('gemini_api_key', 'fake-key')
+        Setting.set_setting('security_ai_enabled', 'true')
+        Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'false')
+        r = staff_ai.staff_chat('donzo turbo rejimini yoq', 'turbo_user')
+        self.assertTrue(r['ok'])
+        self.assertEqual(staff_ai._get_ai_mode(), 'turbo')
+        r2 = staff_ai.staff_chat('turbo off', 'turbo_user')
+        self.assertTrue(r2['ok'])
+        self.assertEqual(staff_ai._get_ai_mode(), 'angry')
+
+    def test_turbo_fallback_is_dominant(self):
+        # AI ishlamasa ham turbo rejimda dominant fallback qator qaytadi
+        Setting.set_setting(staff_ai.ANGY_MODE_KEY, 'turbo')
+        with unittest.mock.patch.object(staff_ai, '_call_gemini',
+                                        return_value={'ok': False, 'answer': ''}):
+            r = staff_ai.marketing_reply('nima gap', 'Guruh')
+        self.assertTrue(r['ok'])
+        self.assertIn('donzo', r['answer'].lower())
 
     def test_marketing_reply_sweet_persona_in_any_mode(self):
         # Angry rejim yoqilgan bo'lsa ham marketing javobi shirin qoladi

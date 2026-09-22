@@ -19,6 +19,9 @@ from apps.payments.export_orders import EXPORT_LINK_SALT
 
 User = get_user_model()
 
+# Barcha eksport yo'llari `/api/v1/` ostida mount qilingan.
+API_PREFIX = '/api/v1'
+
 
 class ExportOrdersTests(TestCase):
     def setUp(self):
@@ -63,7 +66,9 @@ class ExportOrdersTests(TestCase):
         self.assertNotIn('token=', body['url'])
 
     def test_signed_link_downloads_csv(self):
-        url = self._link()['url']
+        # Havola API ildiziga nisbatan qaytadi (frontend `apiUrl()` bilan
+        # `/api/v1` ni qo'shadi) — shuning uchun test ham to'liq yo'lni oladi.
+        url = API_PREFIX + self._link()['url']
         resp = APIClient().get(url)  # imzolangan kalitning o'zi ruxsatnoma
         self.assertEqual(resp.status_code, 200)
         self.assertIn('text/csv', resp['Content-Type'])
@@ -94,13 +99,13 @@ class ExportOrdersTests(TestCase):
             ex.EXPORT_LINK_MAX_AGE = original
 
     def test_link_of_demoted_admin_is_refused(self):
-        url = self._link()['url']
+        url = API_PREFIX + self._link()['url']
         self.admin.role = 'customer'
         self.admin.save(update_fields=['role'])
         self.assertEqual(APIClient().get(url).status_code, 403)
 
     def test_link_of_inactive_user_is_refused(self):
-        url = self._link()['url']
+        url = API_PREFIX + self._link()['url']
         self.admin.is_active = False
         self.admin.save(update_fields=['is_active'])
         self.assertEqual(APIClient().get(url).status_code, 403)
