@@ -276,12 +276,23 @@ def diag_state(request):
         from apps.settings_app.models import MarketingGroupStat
         rows = MarketingGroupStat.objects.all().order_by('-last_reply_at')[:20]
         now = datetime.now(timezone.utc)
+        # Kunlik reklama limiti: guruh bugun nechta reklama ko'rgani (limit —
+        # marketing_ads_per_day, default 2). Diagda ko'rinadi — limit ishlayaptimi
+        # shu yerdan bir qarashda bilinadi.
+        try:
+            from apps.settings_app.models import Setting
+            ads_per_day = int(Setting.get_setting('marketing_ads_per_day', '2') or '2')
+        except Exception:
+            ads_per_day = 2
+        today = timezone.localdate()
+        marketing['ads_per_day'] = ads_per_day
         marketing['groups'] = [
             {
                 'chat_id': r.chat_id,
                 'title': r.chat_title,
                 'replies': r.replies_count,
                 'ads': r.ads_count,
+                'ads_today': (r.ads_today if r.ads_today_day == today else 0),
                 'joins': r.joins_count,
                 'last_reply_age_s': (int((now - r.last_reply_at).total_seconds())
                                      if r.last_reply_at else None),
