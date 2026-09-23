@@ -172,6 +172,127 @@ class DailyMarketingTests(TestCase):
         self.assertEqual(len(sent), 0)
 
 
+class AdBudgetTests(TestCase):
+    """Kunlik reklama limiti: guruh bir kunda ko'pi bilan 2 ta reklama ko'radi.
+
+    Limit barcha reklama yo'llari uchun umumiy: javobga qo'shiladigan reklama,
+    kunlik suratli reklama, creative reklama, salomlashuvdagi reklama.
+    """
+
+    def setUp(self):
+        cache.clear()
+        from apps.settings_app.models import Setting
+        Setting.clear_cache()
+
+    def test_two_ads_then_budget_exhausted(self):
+        self.assertTrue(MarketingGroupStat.ad_budget_ok('-100111', 2))
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        self.assertTrue(MarketingGroupStat.ad_budget_ok('-100111', 2))
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        # Ikkita reklama — limit tugadi
+        self.assertFalse(MarketingGroupStat.ad_budget_ok('-100111', 2))
+        # Boshqa guruhga ta'sir qilmaydi (limit guruh bo'yicha)
+        self.assertTrue(MarketingGroupStat.ad_budget_ok('-100222', 2))
+
+    def test_budget_resets_on_new_day(self):
+        for _ in range(2):
+            MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        self.assertFalse(MarketingGroupStat.ad_budget_ok('-100111', 2))
+        # Kechagi hisobga o'tkazamiz — yangi kun boshlandi
+        MarketingGroupStat.objects.filter(chat_id='-100111').update(
+            ads_today_day=timezone.localdate() - timedelta(days=1))
+        self.assertTrue(MarketingGroupStat.ad_budget_ok('-100111', 2))
+        # Yangi kunda hisob noldan boshlanadi (eski 2 ta qo'shilib ketmaydi)
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        row = MarketingGroupStat.objects.get(chat_id='-100111')
+        self.assertEqual(row.ads_today, 1)
+        self.assertEqual(row.ads_today_day, timezone.localdate())
+        self.assertEqual(row.ads_count, 3)  # umumiy hisob saqlanadi
+
+    def test_zero_limit_blocks_ads(self):
+        self.assertFalse(MarketingGroupStat.ad_budget_ok('-100111', 0))
+
+    def test_bot_helper_uses_setting(self):
+        from apps.settings_app.models import Setting
+        # Default — 2 ta
+        self.assertTrue(bot._ads_per_day_limit() == 2)
+        self.assertTrue(bot._ad_budget_ok('-100111'))
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        self.assertFalse(bot._ad_budget_ok('-100111'))
+        # Admin limitni oshirsa — yana ruxsat
+        Setting.set_setting('marketing_ads_per_day', '5')
+        self.assertEqual(bot._ads_per_day_limit(), 5)
+        self.assertTrue(bot._ad_budget_ok('-100111'))
+        # 0 — reklama butunlay o'chadi
+        Setting.set_setting('marketing_ads_per_day', '0')
+        self.assertFalse(bot._ad_budget_ok('-100222'))
+
+    def test_bad_setting_falls_back_to_two(self):
+        from apps.settings_app.models import Setting
+        Setting.set_setting('marketing_ads_per_day', 'salom')
+        self.assertEqual(bot._ads_per_day_limit(), 2)
+
+    def test_daily_marketing_skips_group_over_limit(self):
+        """Guruh kunlik limitni tugatgan bo'lsa — kunlik reklama ham yuborilmaydi."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from apps.settings_app.models import Setting
+        Setting.set_setting('marketing_daily_enabled', 'true')
+        Setting.set_setting('telegram_bot_token', 'fake:token')
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        now = datetime(2026, 8, 17, 9, 5, tzinfo=ZoneInfo('Asia/Tashkent'))
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api), \
+             mock.patch.object(bot, '_tashkent_now', return_value=now):
+            bot._send_daily_marketing()
+
+        self.assertEqual(sent, [])
+
+    def test_creative_ad_only_picks_group_with_budget(self):
+        """Creative reklama faqat limiti qolgan guruhni tanlaydi."""
+        from apps.settings_app.models import Setting
+        Setting.set_setting('telegram_bot_token', 'fake:token')
+        MarketingGroupStat.objects.create(chat_id='-100111', chat_title='To\'yingan')
+        MarketingGroupStat.objects.create(chat_id='-100222', chat_title='Bo\'sh')
+        for _ in range(2):
+            MarketingGroupStat.record('-100111', "To'yingan", 'ad')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api):
+            bot._send_creative_ad_to_groups()
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['chat_id'], '-100222')
+
+    def test_creative_ad_stays_silent_when_all_groups_exhausted(self):
+        from apps.settings_app.models import Setting
+        Setting.set_setting('telegram_bot_token', 'fake:token')
+        for _ in range(2):
+            MarketingGroupStat.record('-100111', 'Gamerlar', 'ad')
+        sent = []
+
+        def fake_api(token, method, payload):
+            sent.append(dict(payload))
+            return {'ok': True, 'result': {}}
+
+        with mock.patch.object(bot, '_tg_api', side_effect=fake_api):
+            bot._send_creative_ad_to_groups()
+
+        self.assertEqual(sent, [])
+
+
 class GroupRoastTests(TestCase):
     """Suhbatga qo'shilish: BELGILAMASDAN, aytilgan gapga reply qilib javob.
 

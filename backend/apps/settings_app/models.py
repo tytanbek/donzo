@@ -342,10 +342,14 @@ class SiteSetting:
         # ── Marketing (boshqa guruhlarda reklama + selektiv javob) ──
         # marketing_group_enabled — bot guruhlarda marketing qiladimi;
         # marketing_ad_prob — javobga reklama qo'shilish ehtimoli (0.0-1.0);
-        # marketing_rate_per_hour — har guruhda soatiga maks javob soni.
+        # marketing_rate_per_hour — har guruhda soatiga maks javob soni;
+        # marketing_ads_per_day — har guruhda kuniga maks REKLAMA soni
+        #   (kunlik reklama, creative reklama va javobga qo'shilgan reklama
+        #   hammasi bitta hisobga kiradi; 0 — reklama butunlay yuborilmaydi).
         'marketing_group_enabled': 'False',
         'marketing_ad_prob': '0.03',
         'marketing_rate_per_hour': '5',
+        'marketing_ads_per_day': '2',
         # marketing_daily_enabled — kunlik ertalabki suratli reklama yoq/o'chir;
         # marketing_daily_time — yuborish vaqti (HH:MM, Asia/Tashkent);
         # marketing_daily_image — surat URL (bo'sh bo'lsa faol Banner ishlatiladi).
@@ -385,6 +389,11 @@ class MarketingGroupStat(models.Model):
     replies_count = models.PositiveIntegerField(default=0)
     ads_count = models.PositiveIntegerField(default=0)
     joins_count = models.PositiveIntegerField(default=0)
+    # Kunlik reklama limiti hisobi: bugun shu guruhga nechta reklama ketdi.
+    # `ads_today_day` — hisob qaysi kunga tegishli (localhost sana); kun
+    # o'zgarsa hisob noldan boshlanadi (bot restart bo'lsa ham saqlanadi).
+    ads_today = models.PositiveIntegerField(default=0)
+    ads_today_day = models.DateField(null=True, blank=True)
     last_reply_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -414,6 +423,12 @@ class MarketingGroupStat(models.Model):
                 updates['last_reply_at'] = timezone.now()
             elif event == 'ad':
                 updates['ads_count'] = F('ads_count') + 1
+                # Kunlik limit hisobi — bir PK ustida atomik (F()) yangilanadi,
+                # shuning uchun parallel yuborishlarda ham son yo'qolmaydi.
+                today = timezone.localdate()
+                updates['ads_today'] = (1 if row.ads_today_day != today
+                                        else F('ads_today') + 1)
+                updates['ads_today_day'] = today
             elif event == 'join':
                 updates['joins_count'] = F('joins_count') + 1
             if (chat_title or '').strip():
@@ -423,6 +438,37 @@ class MarketingGroupStat(models.Model):
             MarketingDailyStat.record(event)
         except Exception:
             logger.exception('MarketingGroupStat.record failed')
+
+    @classmethod
+    def ad_budget_ok(cls, chat_id: str, per_day: int) -> bool:
+        """Shu guruhda bugun yana reklama yuborish mumkinmi?
+
+        Kunlik reklama limiti (marketing_ads_per_day) shu yerga tayanadi:
+        javobga qo'shilgan reklama, kunlik suratli reklama, creative reklama
+        va yangi a'zo salomlashuvidagi reklama — hammasi bitta hisobdan
+        o'tadi, ya'ni guruh bir kunda ko'pi bilan `per_day` ta reklama ko'radi.
+
+        Xato bo'lsa `False` qaytaradi (fail-closed) — bazadagi muammo
+        sababli foydalanuvchini reklama bilan ko'mib tashlamaslik uchun.
+        """
+        from django.utils import timezone
+
+        try:
+            limit = int(per_day)
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return False
+        try:
+            row = cls.objects.filter(chat_id=str(chat_id)).first()
+            if row is None:
+                return True  # bugun hali reklama yo'q
+            if row.ads_today_day != timezone.localdate():
+                return True  # yangi kun — hisob noldan boshlanadi
+            return int(row.ads_today or 0) < limit
+        except Exception:
+            logger.exception('MarketingGroupStat.ad_budget_ok failed')
+            return False
 
 
 class MarketingDailyStat(models.Model):

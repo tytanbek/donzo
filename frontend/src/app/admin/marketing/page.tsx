@@ -41,6 +41,16 @@ const SLIDERS: SliderDef[] = [
     parse: (s) => parseInt(s || '5', 10),
     accent: '#8B5CF6',
   },
+  {
+    key: 'marketing_ads_per_day',
+    label: 'Kunlik reklama limiti',
+    icon: FiTarget,
+    hint: "Har guruh kuniga ko'pi bilan shuncha reklama ko'radi — javobga qo'shilgan reklama, kunlik reklama va creative reklama hammasi shu limitdan o'tadi. 0 — reklama umuman yo'q.",
+    min: 0, max: 10, step: 1, unit: 'ta/kun',
+    format: (v) => `${Math.round(v)} ta/kun`,
+    parse: (s) => Math.max(0, parseInt(s || '2', 10) || 0),
+    accent: '#22C55E',
+  },
 ];
 
 export default function AdminMarketingPage() {
@@ -51,6 +61,7 @@ export default function AdminMarketingPage() {
   const [values, setValues] = useState<Record<string, number>>({
     marketing_ad_prob: 60,
     marketing_rate_per_hour: 5,
+    marketing_ads_per_day: 2,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -67,10 +78,12 @@ export default function AdminMarketingPage() {
         setDailyTime(String(s.marketing_daily_time ?? '09:00') || '09:00');
         setDailyImage(String(s.marketing_daily_image ?? ''));
         const ad = parseFloat(s.marketing_ad_prob ?? '0.6');
+        const adsPerDay = parseInt(s.marketing_ads_per_day ?? '2', 10);
         setValues((prev) => ({
           ...prev,
           marketing_ad_prob: Math.round((Number.isFinite(ad) ? ad : 0.6) * 100),
           marketing_rate_per_hour: parseInt(s.marketing_rate_per_hour ?? '5', 10) || 5,
+          marketing_ads_per_day: Number.isFinite(adsPerDay) ? Math.max(0, adsPerDay) : 2,
         }));
       } catch (e) {
         console.error('Marketing settings error:', e);
@@ -110,6 +123,7 @@ export default function AdminMarketingPage() {
         marketing_group_enabled: enabled,
         marketing_ad_prob: String((values.marketing_ad_prob || 0) / 100),
         marketing_rate_per_hour: String(values.marketing_rate_per_hour || 5),
+        marketing_ads_per_day: String(values.marketing_ads_per_day ?? 2),
         marketing_daily_enabled: dailyEnabled,
         marketing_daily_time: dailyTime || '09:00',
         marketing_daily_image: dailyImage.trim(),
@@ -417,6 +431,7 @@ export default function AdminMarketingPage() {
                         <th className="py-2.5 pr-3 font-semibold">Guruh</th>
                         <th className="py-2.5 pr-3 font-semibold text-right">Javoblar</th>
                         <th className="py-2.5 pr-3 font-semibold text-right">Reklamalar</th>
+                        <th className="py-2.5 pr-3 font-semibold text-right">Bugun</th>
                         <th className="py-2.5 pr-3 font-semibold text-right">Qo'shilish</th>
                         <th className="py-2.5 font-semibold text-right">Oxirgi javob</th>
                       </tr>
@@ -437,6 +452,10 @@ export default function AdminMarketingPage() {
                           </td>
                           <td className="py-2.5 pr-3 text-right font-mono text-[#00F5FF]">{g.replies_count}</td>
                           <td className="py-2.5 pr-3 text-right font-mono text-[#F59E0B]">{g.ads_count}</td>
+                          <td className="py-2.5 pr-3 text-right font-mono text-[#22C55E]"
+                            title={`Kunlik limit: ${stats?.ads_per_day ?? 2} ta`}>
+                            {g.ads_today ?? 0}/{stats?.ads_per_day ?? 2}
+                          </td>
                           <td className="py-2.5 pr-3 text-right font-mono text-[#64748B]">{g.joins_count}</td>
                           <td className="py-2.5 text-right text-[11px] text-[#64748B] font-mono">
                             {g.last_reply_at ? new Date(g.last_reply_at).toLocaleString('uz-UZ', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
@@ -468,6 +487,7 @@ export default function AdminMarketingPage() {
               <li>Guruhdagi har bir xabarga javob bermaydi — <strong className="text-white">qiziqarli mavzular</strong> (o'yin, top-up, pul, premium) tanlab olinadi</li>
               <li>Javob chiqarilganda — <strong className="text-white">Reklama ehtimoli</strong> bo'yicha platforma havolasi qo'shiladi</li>
               <li><strong className="text-white">Soatlik limit</strong> — spam bo'lmasligi uchun har guruhda soatiga maks javob sonini cheklaydi</li>
+              <li><strong className="text-white">Kunlik reklama limiti</strong> — har guruh kuniga ko'pi bilan shuncha reklama ko'radi (default 2). Limit tugasa reklama qo'shilmaydi, lekin DONZO suhbatda yozishda davom etadi</li>
               <li>AI ning joriy rejimi (<strong className="text-white">muloyim / angry</strong>) marketing javoblariga ham qo'llanadi</li>
             </ol>
             <p className="mt-3 text-[#475569]">

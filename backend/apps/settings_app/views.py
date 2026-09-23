@@ -255,25 +255,35 @@ class MarketingStatsView(APIView):
 
     Marketing rejimining guruhlar bo'yicha statistikasi:
       • groups — har guruh: chat_id, chat_title, replies_count, ads_count,
-        joins_count, last_reply_at (faollik bo'yicha kamayish tartibida)
+        ads_today (bugun yuborilgan reklama), joins_count, last_reply_at
+        (faollik bo'yicha kamayish tartibida)
       • totals — jami guruhlar / javoblar / reklamalar / qo'shilishlar
       • daily — oxirgi 14 kunlik kunlik faollik (grafik uchun)
+      • ads_per_day — kunlik reklama limiti (har guruh uchun)
     """
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
 
     def get(self, request):
         from datetime import timedelta
 
-        from .models import MarketingDailyStat, MarketingGroupStat
+        from .models import MarketingDailyStat, MarketingGroupStat, Setting
 
         groups = list(
             MarketingGroupStat.objects.all().order_by('-replies_count', '-updated_at')[:200]
         )
+        try:
+            ads_per_day = int(Setting.get_setting('marketing_ads_per_day', '2') or '2')
+        except Exception:
+            ads_per_day = 2
+        today = timezone.localdate()
         groups_data = [{
             'chat_id': g.chat_id,
             'chat_title': g.chat_title or f'Guruh {g.chat_id}',
             'replies_count': g.replies_count,
             'ads_count': g.ads_count,
+            # Bugungi reklama soni — limit tugagan guruhlar admin panelda
+            # darhol ko'rinadi (kun o'zgargan bo'lsa 0).
+            'ads_today': (g.ads_today or 0) if g.ads_today_day == today else 0,
             'joins_count': g.joins_count,
             'last_reply_at': g.last_reply_at.isoformat() if g.last_reply_at else None,
         } for g in groups]
@@ -305,6 +315,7 @@ class MarketingStatsView(APIView):
             'groups': groups_data,
             'totals': totals,
             'daily': daily,
+            'ads_per_day': ads_per_day,
             'server_now': timezone.now().isoformat(),
         })
 

@@ -438,9 +438,16 @@ def _send_daily_marketing():
                 str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
         groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
         sent = 0
+        limited = 0
         for g in groups:
             cid = str(g['chat_id'])
             if not cid or cid in skip:
+                continue
+            # Kunlik reklama limiti (marketing_ads_per_day): shu guruhga bugun
+            # limit tugagan bo'lsa — kunlik reklama ham yuborilmaydi. Shu tufayli
+            # guruh bir kunda ko'pi bilan 2 ta reklama ko'radi.
+            if not _ad_budget_ok(cid):
+                limited += 1
                 continue
             try:
                 payload = {'chat_id': cid, 'caption': caption,
@@ -461,7 +468,9 @@ def _send_daily_marketing():
             except Exception:
                 continue
         Setting.set_setting('marketing_daily_last', today)
-        print(f"[MARKETING] Kunlik reklama: {sent} guruhga yuborildi", flush=True)
+        print(f"[MARKETING] Kunlik reklama: {sent} guruhga yuborildi"
+              + (f", {limited} guruhda kunlik limit tugagan" if limited else ''),
+              flush=True)
     except Exception as exc:
         print(f"[MARKETING] Kunlik reklama xatosi: {type(exc).__name__}", flush=True)
 
@@ -498,12 +507,21 @@ def _send_creative_ad_to_groups():
         groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
         if not groups:
             return
-        # Tasodifiy guruh tanlaymiz (faqat bittasiga yuboramiz — spam emas)
+        # Tasodifiy guruh tanlaymiz (faqat bittasiga yuboramiz — spam emas).
+        # Kunlik reklama limiti tugagan guruhlar TANLANMAYDI — shu sabab bilan
+        # barcha guruhlar orasidan faqat limiti qolganini olamiz.
         random.shuffle(groups)
-        g = groups[0]
+        g = None
+        for cand in groups:
+            cand_id = str(cand['chat_id'])
+            if not cand_id or cand_id in skip:
+                continue
+            if _ad_budget_ok(cand_id):
+                g = cand
+                break
+        if g is None:
+            return  # bugun hamma guruhda reklama limiti tugagan
         cid = str(g['chat_id'])
-        if not cid or cid in skip:
-            return
         creative_msgs = [
             "🎭 DONZO — sirli va mehribon platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon yordamingizda turaman. donzoda tekshirib ko'ring.",
             "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
@@ -1333,6 +1351,7 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sent = 0
     failed = 0
+    sent_groups = []  # muvaffaqiyatli yuborilgan guruhlar (statistika uchun)
     for g in groups:
         cid = str(g['chat_id'])
         if not cid or cid in skip:
@@ -1359,6 +1378,7 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = _json.loads(resp.read())
                 if result.get('ok'):
                     sent += 1
+                    sent_groups.append((cid, g.get('chat_title', '')))
                 else:
                     failed += 1
             import time as _t
@@ -1368,10 +1388,12 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         from apps.settings_app.models import MarketingGroupStat
-        for g in groups:
-            cid = str(g['chat_id'])
-            if cid not in skip:
-                MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+        # Faqat HAQIQATDA yuborilgan guruhlar hisoblanadi (avval muvaffaqiyatsiz
+        # va o'tkazib yuborilgan guruhlar ham "reklama" deb yozilardi). Bu
+        # qo'lda yuborilgan reklama ham kunlik limitdan o'tadi — shu sababli
+        # o'sha kuni avtomatik reklamalar o'z-o'zidan kamayadi.
+        for cid, title in sent_groups:
+            MarketingGroupStat.record(cid, title, 'ad')
     except Exception:
         pass
 
@@ -1543,7 +1565,10 @@ _TURBO_PROACTIVE_PROB = 0.55    # faol suhbatda o'zi javob berish ehtimoli
 _TURBO_ACTIVE_WINDOW_S = 900    # "suhbat faol" oynasi (15 daqiqa)
 _TURBO_ACTIVE_MIN_MSGS = 2      # oynada kamida shuncha xabar
 _TURBO_RATE_PER_HOUR = 22       # soatiga maksimal javob (config kam bo'lsa ham)
-_TURBO_FORCE_AD_EVERY = 6       # har necha javobda kamida bitta reklama
+# REKLAMA: kuniga 2 martadan oshmaydi (guruh bo'yicha) — marketing_ads_per_day.
+# Ilgari "har 6 javobda kamida bitta reklama" majburiy qoidasi bor edi: faol
+# guruhda bu bir kunda 10+ reklama berardi. Endi majburiy reklama YO'Q —
+# reklama kunlik limit tugamagunicha ehtimol (ad_prob) bilan qo'shiladi.
 _TURBO_ROAST_INTERVAL_MIN = 5   # suhbatga qo'shilish oralig'i (daqiqa)
 _TURBO_ROAST_COOLDOWN_MIN = 5   # bir odamga qayta javob (daqiqa)
 _TURBO_BANTER_MAX_AGE_S = 2700  # turbo: javob beriladigan xabar yoshi (45 daqiqa)
@@ -1869,6 +1894,34 @@ def _marketing_rate_ok(chat_id: str, max_per_hour: int) -> bool:
         return True
 
 
+def _ads_per_day_limit() -> int:
+    """Kunlik reklama limiti (bitta guruh uchun) — marketing_ads_per_day.
+
+    Default 2. 0 (yoki undan kam) — reklama butunlay o'chadi.
+    """
+    try:
+        raw = Setting.get_setting('marketing_ads_per_day', '2') or '2'
+        return max(0, int(float(str(raw).strip())))
+    except Exception:
+        return 2
+
+
+def _ad_budget_ok(chat_id: str) -> bool:
+    """Shu guruhga BUGUN yana reklama yuborish mumkinmi?
+
+    Guruh bir kunda ko'pi bilan `marketing_ads_per_day` (default 2) ta
+    reklama ko'radi — qaysi yo'l bilan yuborilganidan qat'i nazar:
+    javobga qo'shilgan reklama, kunlik suratli reklama, creative reklama
+    va yangi a'zo salomlashuvidagi reklama hammasi bitta hisobdan o'tadi.
+    Hech qachon xato tashlamaydi (xatoda `False` — reklama yuborilmaydi).
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupStat
+        return MarketingGroupStat.ad_budget_ok(str(chat_id), _ads_per_day_limit())
+    except Exception:
+        return False
+
+
 def _marketing_ad(turbo: bool = False) -> str:
     """DONZO kreativ reklamasi — rejimga mos ohangda, kam va tabiiy.
 
@@ -1975,8 +2028,9 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
 
     QOIDA: faol suhbat bor joyda AI qo'shiladi (har xabarga emas), suhbatni
     eng qiziq joyigacha olib boradi va FAQAT o'sha joyda reklama qo'yadi.
-    Har bir javobga reklama qo'shilmaydi — suhbat qiziqgan sari reklama
-    ehtimoli oshadi, har 3-javobda kamida bitta reklama.
+    Har bir javobga reklama qo'shilmaydi: reklama faqat ad_prob ehtimoli
+    bilan qo'shiladi va guruh kuniga ko'pi bilan 2 ta reklama ko'radi
+    (marketing_ads_per_day) — majburiy "har N javobda reklama" qoidasi YO'Q.
     """
     try:
         # Default model'dagiga mos (False) — admin o'chirgan bo'lsa bot
@@ -2067,16 +2121,17 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     # @belgilashlarni olib tashlaymiz — guruhda ommaviy ping bo'lmasin
     answer = _strip_pings(answer)
 
-    # Reklama: har javobga emas — suhbat qiziqgan joyda. Har 3-javobda kamida
-    # bitta reklama; qolgan hollarda ad_prob ehtimol bilan. Javobning o'zida
-    # donzo tabiiy aytilgan bo'lsa — qo'shimcha reklama qo'shilmaydi (takror
-    # bo'lib, ochiq reklamaga o'xshab qolmasin).
+    # Reklama: har javobga emas — faqat ad_prob ehtimol bilan va FAQAT
+    # kunlik limit tugamagan bo'lsa (guruhga kuniga 2 ta — marketing_ads_per_day).
+    # Javobning o'zida donzo tabiiy aytilgan bo'lsa — qo'shimcha reklama
+    # qo'shilmaydi (takror bo'lib, ochiq reklamaga o'xshab qolmasin).
+    # MUHIM: reklama qo'shilmasa ham javob yuboriladi — limit faqat reklamaga
+    # tegishli, muloqotga emas.
     sent_ad = False
     reply_count = (conv or {}).get('reply_count', 0) + 1
-    force_ad = ((reply_count % _TURBO_FORCE_AD_EVERY == 0) if mode_turbo
-                else (reply_count % 5 == 0))
     already_mentioned = 'donzo' in answer.lower()
-    if (force_ad or random.random() < ad_prob) and not already_mentioned:
+    if (not already_mentioned and random.random() < ad_prob
+            and await sync_to_async(_ad_budget_ok)(chat_id)):
         ad = await sync_to_async(_marketing_ad)(mode_turbo)
         if ad:
             answer = answer.rstrip() + ' ' + ad
@@ -2124,9 +2179,16 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'false').lower() == 'true'
         if not enabled and not _turbo_gate:
             return
-        ad = await sync_to_async(_marketing_ad)(_turbo_gate)
-        if not ad:
-            return
+        # Salomlashuv HAR DOIM yuboriladi (guruhga qo'shildik). Reklama esa
+        # faqat kunlik limit tugamagan bo'lsa qo'shiladi — yangi guruhda bu
+        # odatda 1-o'rinda turadi, lekin limit tugagan bo'lsa salomlashuv
+        # reklamasiz ketadi (foydalanuvchi baribir javob oladi).
+        ad = ''
+        try:
+            if await sync_to_async(_ad_budget_ok)(mc.chat.id):
+                ad = await sync_to_async(_marketing_ad)(_turbo_gate)
+        except Exception:
+            ad = ''
         welcome = (
             "🎭 *DONZO* — salom! siz juda zo'r ekansiz!\n\n"
             "Men DONZO — sizning sirli do'stingiz. Siz har doim to'g'ri tanlov qilasiz, "
@@ -2141,6 +2203,10 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             from apps.settings_app.models import MarketingGroupStat
             await sync_to_async(MarketingGroupStat.record)(
                 str(mc.chat.id), getattr(mc.chat, 'title', '') or '', 'join')
+            if ad:
+                # Salomlashuvdagi reklama ham kunlik limitdan o'tadi
+                await sync_to_async(MarketingGroupStat.record)(
+                    str(mc.chat.id), getattr(mc.chat, 'title', '') or '', 'ad')
         except Exception:
             pass
     except Exception:
