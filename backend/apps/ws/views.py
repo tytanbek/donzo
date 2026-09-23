@@ -284,7 +284,11 @@ def diag_state(request):
             ads_per_day = int(Setting.get_setting('marketing_ads_per_day', '2') or '2')
         except Exception:
             ads_per_day = 2
-        today = timezone.localdate()
+        # Diqqat: bu modulda `timezone` — stdlib `datetime.timezone`
+        # (`datetime.now(timezone.utc)` uchun), shuning uchun Django zonasini
+        # alohida import qilamiz. Aks holda `timezone.localdate()` yiqiladi.
+        from django.utils import timezone as _dj_timezone
+        today = _dj_timezone.localdate()
         marketing['ads_per_day'] = ads_per_day
         marketing['groups'] = [
             {
