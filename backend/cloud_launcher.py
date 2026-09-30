@@ -324,6 +324,12 @@ def _watchdog_loop():
                 if kill:
                     strikes[name] = 0
                     _kill_hung(name, proc, age, limit)
+            # Har siklda holatni DB'ga yozamiz: /internal/diag/ dan
+            # "watchdog tirikmi va nechta strike yig'ilyapti?" ko'rinadi —
+            # nazoratning o'zi ham jim yiqilib qolmasin.
+            _svc_state('WATCHDOG', 'watching', interval_s=WATCHDOG_INTERVAL,
+                       bot_limit_s=BOT_HANG_SECONDS, uc_limit_s=UC_HANG_SECONDS,
+                       strikes={k: v for k, v in strikes.items() if v})
         except Exception as exc:
             _log('WATCHDOG', f"xato: {type(exc).__name__}: {str(exc)[:120]}")
         if _stop.wait(WATCHDOG_INTERVAL):
