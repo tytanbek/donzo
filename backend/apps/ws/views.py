@@ -239,6 +239,29 @@ def diag_state(request):
     except Exception as exc:
         services['error'] = f'{type(exc).__name__}: {exc}'
 
+    # Bot jarayoni tirikmi VA haqiqatan update qabul qilyaptimi? /health/ faqat
+    # heartbeat yoshini ko'rsatadi; bot-stats.json esa hisoblagichlarni beradi
+    # (updates_handled, messages_sent, oxirgi polling xatolari) — jarayon osilib
+    # qolganda buni boshqa yo'l bilan ko'rish imkoni yo'q.
+    bot_activity = {}
+    try:
+        import bot_stats
+        stats = bot_stats.read_bot_stats()
+        commands = stats.get('commands') or {}
+        bot_activity = {
+            'last_activity_age_s': _hb_age(stats.get('last_activity')),
+            'started_at': stats.get('started_at'),
+            'restarts': stats.get('restarts'),
+            'updates_handled': stats.get('updates_handled'),
+            'messages_sent': stats.get('messages_sent'),
+            'token_valid': (stats.get('token_status') or {}).get('valid'),
+            'top_commands': dict(sorted(commands.items(), key=lambda kv: kv[1],
+                                        reverse=True)[:5]),
+            'polling_errors': (stats.get('polling_errors') or [])[-3:],
+        }
+    except Exception as exc:
+        bot_activity['error'] = f'{type(exc).__name__}: {exc}'
+
     counts = {}
     for label, ref in (
         ('settings', ('settings_app', 'Setting')),
@@ -340,6 +363,7 @@ def diag_state(request):
             'user_client_fresh': uc_age is not None and uc_age < UC_FRESH_SECONDS,
         },
         'services': services,
+        'bot_activity': bot_activity,
         'marketing': marketing,
         'ai': ai,
         'counts': counts,

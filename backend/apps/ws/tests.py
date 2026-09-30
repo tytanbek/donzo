@@ -80,3 +80,34 @@ class DiagStateTests(TestCase):
         self.assertNotIn('error', marketing)
         self.assertEqual(marketing['groups'], [])
         self.assertEqual(marketing['totals']['ads'], 0)
+
+    def test_bot_activity_block_reports_update_counters(self):
+        from unittest import mock
+
+        fake = {
+            'started_at': '2026-09-30T07:55:00+00:00',
+            'last_activity': '2026-09-30T08:00:00+00:00',
+            'restarts': 3,
+            'updates_handled': 41,
+            'messages_sent': 40,
+            'commands': {'start': 5, 'reklama': 9},
+            'token_status': {'valid': True, 'username': 'DONZOROBOT'},
+            'polling_errors': [{'ts': 'x', 'kind': 'conflict_409', 'message': 'y'}],
+        }
+        with mock.patch('bot_stats.read_bot_stats', return_value=fake):
+            resp = self._diag()
+        self.assertEqual(resp.status_code, 200)
+        act = resp.json()['bot_activity']
+        self.assertNotIn('error', act)
+        self.assertEqual(act['updates_handled'], 41)
+        self.assertEqual(act['token_valid'], True)
+        self.assertEqual(list(act['top_commands'])[0], 'reklama')
+        self.assertEqual(len(act['polling_errors']), 1)
+
+    def test_bot_activity_block_never_breaks_the_snapshot(self):
+        from unittest import mock
+
+        with mock.patch('bot_stats.read_bot_stats', side_effect=OSError('yo`q')):
+            resp = self._diag()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('error', resp.json()['bot_activity'])
