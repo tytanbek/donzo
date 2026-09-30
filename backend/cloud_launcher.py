@@ -235,6 +235,101 @@ def _relay(name: str, proc: subprocess.Popen):
     threading.Thread(target=_pump, args=(proc.stderr,), daemon=True).start()
 
 
+# ── Hung-process watchdog ─────────────────────────────────────────────────
+# `_supervise` acts on EXIT only, so a child that deadlocks stays alive with a
+# stale heartbeat: the launcher keeps reporting "running" while the service
+# answers nobody (the bot spent 41 hours in that state, 2026-09-28 → 09-30).
+# The watchdog reads the heartbeat each service already writes and kills the
+# process, so `_supervise` restarts it. The decision rule itself lives in
+# apps/security/hang_watchdog.py (pure and covered by tests).
+_PROCS = {}
+_PROCS_LOCK = threading.Lock()
+
+WATCHDOG_INTERVAL = int(os.getenv('WATCHDOG_INTERVAL', '60'))
+BOT_HANG_SECONDS = int(os.getenv('BOT_HANG_SECONDS', '420'))
+UC_HANG_SECONDS = int(os.getenv('UC_HANG_SECONDS', '900'))
+
+
+def _register_proc(name: str, proc):
+    with _PROCS_LOCK:
+        _PROCS[name] = proc
+
+
+def _unregister_proc(name: str, proc):
+    with _PROCS_LOCK:
+        if _PROCS.get(name) is proc:
+            _PROCS.pop(name, None)
+
+
+def _all_procs() -> list:
+    with _PROCS_LOCK:
+        return list(_PROCS.items())
+
+
+def _heartbeat_age(key: str):
+    """Age (s) of a Settings heartbeat row, or None when unreadable."""
+    try:
+        from apps.settings_app.models import Setting
+        from apps.ws.views import _hb_age
+        return _hb_age(Setting.get_setting(key, ''))
+    except Exception:
+        return None  # DB hiccup — unknown liveness must never kill a process
+
+
+def _hang_limit(name: str):
+    """(heartbeat key, max age) for a supervised service; (None, None) → skip."""
+    upper = name.upper()
+    if upper == 'BOT':
+        return 'bot_polling_lock', BOT_HANG_SECONDS
+    if upper.startswith('USERCLIENT'):
+        return 'user_client_worker_heartbeat_at', UC_HANG_SECONDS
+    return None, None  # daphne has no heartbeat — an exit is already handled
+
+
+def _kill_hung(name: str, proc, age, limit: int):
+    _svc_tail_push(
+        name,
+        f'WATCHDOG: heartbeat {int(age)}s > {limit}s — jarayon qotib qolgan, '
+        'qayta ishga tushiriladi',
+    )
+    _log(name, f"WATCHDOG: heartbeat {int(age)}s (limit {limit}s) — "
+               f"jarayon o'ldirilmoqda (pid={proc.pid})")
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except Exception as exc:
+        _log(name, f"WATCHDOG: o'ldirish xatosi: {type(exc).__name__}: {str(exc)[:120]}")
+
+
+def _watchdog_loop():
+    """Qotib qolgan jarayonlarni o'ldiradi — `_supervise` qayta ko'taradi."""
+    time.sleep(90)  # servislar birinchi heartbeat'ni yozib bo'lsin
+    strikes = {}
+    while not _stop.is_set():
+        try:
+            import django
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+            django.setup()
+            from apps.security.hang_watchdog import evaluate
+
+            for name, proc in _all_procs():
+                key, limit = _hang_limit(name)
+                if not key or proc.poll() is not None:
+                    continue  # chiqqan jarayonni `_supervise` o'zi ko'taradi
+                age = _heartbeat_age(key)
+                strikes[name], kill = evaluate(age, limit, strikes.get(name, 0))
+                if kill:
+                    strikes[name] = 0
+                    _kill_hung(name, proc, age, limit)
+        except Exception as exc:
+            _log('WATCHDOG', f"xato: {type(exc).__name__}: {str(exc)[:120]}")
+        if _stop.wait(WATCHDOG_INTERVAL):
+            return
+
+
 def _spawn(cmd, name, cwd=BASE_DIR):
     try:
         proc = subprocess.Popen(
@@ -271,9 +366,11 @@ def _supervise(name, cmd):
             continue
         _t0 = time.time()
         restarts += 1
+        _register_proc(name, proc)
         _log(name, f"started (pid={proc.pid})")
         _svc_state(name, 'running', pid=proc.pid, restarts=restarts)
         rc = proc.wait()
+        _unregister_proc(name, proc)
         if _stop.is_set():
             _log(name, f"stopped (rc={rc}) — launcher yakunlanmoqda")
             _svc_state(name, 'stopped', rc=rc, restarts=restarts)
@@ -535,6 +632,7 @@ def main():
     threads.append(threading.Thread(
         target=_userclient_reconciler, args=(_supervised_slots,), daemon=True))
     threads.append(threading.Thread(target=_self_healing_loop, daemon=True))
+    threads.append(threading.Thread(target=_watchdog_loop, daemon=True))
     threads.append(threading.Thread(target=_birthday_check_loop, daemon=True))
     for t in threads:
         t.start()

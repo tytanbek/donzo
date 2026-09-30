@@ -184,7 +184,13 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', '5432'),
         # Neon kabi cloud DB'lar SSL talab qiladi (DB_SSLMODE=require).
         # Lokal PostgreSQL uchun 'prefer' xavfsiz (SSL bo'lmasa plain ga tushadi).
-        'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'prefer')},
+        # connect_timeout: osilib qolgan ulanish abadiy kutmasin — busiz botning
+        # polling loop'i (va heartbeat thread'i) muzlab qoladi: jarayon tirik
+        # ko'rinadi-yu, javob bermaydi (2026-09-28 → 09-30 hodisasi).
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSLMODE', 'prefer'),
+            'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '10')),
+        },
     }
 }
 
@@ -217,7 +223,11 @@ if os.getenv('DATABASE_URL'):
         'PASSWORD': unquote(_u.password or ''),
         'HOST': _u.hostname or '',
         'PORT': str(_u.port or 5432),
-        'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'require')},
+        # connect_timeout — osilib qolgan Neon ulanishi abadiy kutmasin.
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSLMODE', 'require'),
+            'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '10')),
+        },
     }
 
 # ── Guard: no accidental SQLite in production ──
