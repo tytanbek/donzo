@@ -75,3 +75,56 @@ class MultiUserClientTests(TestCase):
     def test_restart_flag_is_per_slot(self):
         self.assertTrue(uca._slot_restart_flag(1).endswith('.restart_requested'))
         self.assertTrue(uca._slot_restart_flag(3).endswith('.restart_requested_3'))
+
+
+class SupervisorStateStatusTests(TestCase):
+    """Panel "onlayn" ko'rsatkichi supervisor qaroridan ustun bo'lmasin.
+
+    Crash-loop'dagi worker har restart'da yangi heartbeat yozadi — panel uni
+    yana onlayn/yangi heartbeat bilan ko'rsatib turadi ("bazida heartbeat
+    ochib qolayapti"). svc_state shu yolg'onni yopadi.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        from apps.settings_app.models import Setting
+        cache.clear()
+        Setting.clear_cache()
+
+    def _set_state(self, name, **state):
+        import json
+
+        from apps.settings_app.models import Setting
+        Setting.set_setting(f'svc_state_{name}', json.dumps(state))
+
+    def _fresh_account(self, slot):
+        from django.utils import timezone
+        return UserClientAccount.objects.create(
+            slot=slot, enabled=True, authorized=True,
+            last_heartbeat=timezone.now())
+
+    def test_extra_slot_crash_loop_turns_online_off(self):
+        self._fresh_account(2)
+        self.assertTrue(uca.get_status(2)['worker_online'])
+        self._set_state('userclient2', status='waiting_restart', rc=4, restarts=12)
+        status = uca.get_status(2)
+        self.assertFalse(status['worker_online'])
+        self.assertTrue(status['authorized'])  # sessiya holati o'zgarmaydi
+
+    def test_extra_slot_running_state_keeps_online(self):
+        self._fresh_account(2)
+        self._set_state('userclient2', status='running', pid=123)
+        self.assertTrue(uca.get_status(2)['worker_online'])
+
+    def test_legacy_crash_loop_turns_online_off_despite_fresh_stats(self):
+        import json
+
+        from django.utils import timezone
+        fresh = json.dumps({'last_heartbeat': timezone.now().isoformat(),
+                            'authorized': True})
+        with mock.patch('pathlib.Path.exists', return_value=True), \
+             mock.patch('pathlib.Path.read_text', return_value=fresh):
+            self.assertTrue(uca.get_status(1)['worker_online'])
+            self._set_state('userclient', status='crashed', rc=4, restarts=391)
+            self.assertFalse(uca.get_status(1)['worker_online'])

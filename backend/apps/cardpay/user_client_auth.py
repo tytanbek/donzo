@@ -30,6 +30,8 @@ import subprocess
 import threading
 import time
 
+from apps.settings_app import service_state
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/
@@ -360,6 +362,10 @@ def _status_slot_n(slot: int) -> dict:
             'credentials': True, 'worker_online': False, 'enabled': False,
             'phone': db_phone, 'username': '', 'login_pending': bool(db_phone),
         }
+    # Supervisor qarori heartbeat'dan ustun: crash-loop'dagi worker oxirgi
+    # start'da yozgan yangi heartbeat bilan "onlayn" ko'rinmasin.
+    _supervisor_down = bool(
+        service_state.failure_reason(f'userclient{int(slot)}'))
     return {
         'slot': row.slot,
         'exists': True,
@@ -368,7 +374,7 @@ def _status_slot_n(slot: int) -> dict:
         'authorized': row.authorized,
         'credentials': True,
         'session_exists': bool(row.session_b64),
-        'worker_online': row.online,
+        'worker_online': row.online and not _supervisor_down,
         'last_heartbeat': row.last_heartbeat.isoformat() if row.last_heartbeat else None,
         'restarts': row.restarts,
         'last_error': row.last_error,
@@ -407,6 +413,12 @@ def get_status(slot=1) -> dict:
             online = (datetime.now(timezone.utc) - dt).total_seconds() < 180
     except Exception:
         pass
+
+    # Supervisor qarori: crash-loop'dagi worker yangi heartbeat yozgan bo'lsa
+    # ham ONLINE ko'rsatilmaydi — panelda "heartbeat ochiq qolayapti" degan
+    # yolg'on holat yopiladi (cloud_launcher svc_state_userclient yozadi).
+    if service_state.failure_reason('userclient'):
+        online = False
 
     session_exists = os.path.exists(SESSION_FILE)
 

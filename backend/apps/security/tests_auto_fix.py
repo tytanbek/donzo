@@ -258,3 +258,45 @@ class HealthFalseAlarmTests(TestCase):
         uc_lines = [l for l in report.splitlines() if 'User Client' in l]
         self.assertTrue(uc_lines)
         self.assertNotIn('❌', uc_lines[0])
+
+    # ── Supervisor qarori (svc_state) heartbeat'dan ustun ──
+
+    def _set_uc_crash_loop(self, status='waiting_restart'):
+        import json
+        Setting.set_setting('svc_state_userclient', json.dumps({
+            'status': status, 'rc': 4, 'restarts': 391, 'backoff_s': 300,
+        }))
+
+    def test_uc_crash_loop_beats_fresh_heartbeat_in_health(self):
+        # Crash-loop'dagi worker har restart'da yangi heartbeat yozadi —
+        # faqat heartbeat'ga qaralsa /status yana "ok" derdi.
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        self._set_uc_crash_loop()
+        res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'down')
+        self.assertIn('waiting_restart', res['detail'])
+        self.assertIn('391', res['detail'])
+
+    def test_uc_running_state_keeps_heartbeat_verdict(self):
+        # Supervisor "running" desa, eski heartbeat mantiq o'zgarmaydi.
+        import json
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        Setting.set_setting('svc_state_userclient',
+                            json.dumps({'status': 'running', 'pid': 31}))
+        res = system_health.check_user_client()
+        self.assertEqual(res['status'], 'ok')
+
+    def test_periodic_report_uc_crash_loop_is_red(self):
+        from apps.cardpay import services
+        self._set_launcher_started(30 * 60)
+        Setting.set_setting('user_client_session_b64', 'c2Vzc2lh')
+        Setting.set_setting('user_client_worker_heartbeat_at',
+                            timezone.now().isoformat())
+        self._set_uc_crash_loop('crashed')
+        report = services.build_health_report()
+        uc_lines = [l for l in report.splitlines() if 'User Client' in l]
+        self.assertTrue(uc_lines)
+        self.assertIn('❌', uc_lines[0])
+        self.assertIn('crashed', uc_lines[0])

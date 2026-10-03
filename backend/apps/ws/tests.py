@@ -111,3 +111,60 @@ class DiagStateTests(TestCase):
             resp = self._diag()
         self.assertEqual(resp.status_code, 200)
         self.assertIn('error', resp.json()['bot_activity'])
+
+
+class HealthCheckSupervisorStateTests(TestCase):
+    """`/health/` supervisor qarorini heartbeat'dan ustun qo'yishi kerak.
+
+    Crash-loop'dagi user-client worker har restart'da yangi heartbeat yozadi;
+    faqat heartbeat'ga qaralsa /health/ uni yana "ok" deb ko'rsatardi
+    ("bazida heartbeat ochib qolayapti").
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        from apps.settings_app.models import Setting
+        cache.clear()
+        Setting.clear_cache()
+
+    def _set(self, key, value):
+        from apps.settings_app.models import Setting
+        Setting.set_setting(key, value)
+
+    def _fresh_uc_heartbeat(self):
+        from django.utils import timezone
+        self._set('user_client_worker_heartbeat_at', timezone.now().isoformat())
+
+    def test_fresh_heartbeat_with_crash_loop_is_stale(self):
+        import json
+
+        self._fresh_uc_heartbeat()
+        self._set('svc_state_userclient', json.dumps({
+            'status': 'waiting_restart', 'rc': 4, 'restarts': 391,
+            'backoff_s': 300,
+        }))
+
+        body = self.client.get('/health/').json()
+        self.assertEqual(body['user_client'], 'stale')
+        self.assertIn('waiting_restart', body['user_client_error'])
+        self.assertEqual(body['user_client_state']['restarts'], 391)
+        self.assertLess(body['user_client_age_s'], 180)  # heartbeat YANGI edi
+
+    def test_running_worker_with_fresh_heartbeat_is_ok(self):
+        import json
+
+        self._fresh_uc_heartbeat()
+        self._set('svc_state_userclient', json.dumps({'status': 'running', 'pid': 31}))
+
+        body = self.client.get('/health/').json()
+        self.assertEqual(body['user_client'], 'ok')
+        self.assertIsNone(body['user_client_error'])
+
+    def test_missing_state_keeps_the_old_verdict(self):
+        # svc_state yo'q (lokal/dev yoki eski deploy) — heartbeat mantiq
+        # o'zgarmaydi, ya'ni soxta qizil signal paydo bo'lmaydi.
+        self._fresh_uc_heartbeat()
+        body = self.client.get('/health/').json()
+        self.assertEqual(body['user_client'], 'ok')
+        self.assertIsNone(body['user_client_error'])

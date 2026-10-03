@@ -292,6 +292,16 @@ def _uc_db_heartbeat_fresh(max_age_seconds: int = 180) -> tuple:
 
 
 def check_user_client() -> dict:
+    # Supervisor qarori eng kuchli signal: crash-loop'dagi worker har
+    # restart'da yangi heartbeat va started_at yozadi, lekin u ISHLAMAYAPTI.
+    # Busiz yangi heartbeat uni yana "ONLINE"/"ishga tushmoqda" qilib
+    # ko'rsatardi ("bazida heartbeat ochib qolayapti").
+    from apps.settings_app import service_state
+    _failure = service_state.failure_reason('userclient')
+    if _failure:
+        return {'name': 'User Client', 'port': '-', 'status': 'down',
+                'detail': f'ishga tushmayapti ({_failure})'}
+
     # CLOUD: lock-port yo'q — user-client-stats.json heartbeat'ga qaraymiz
     # (user_client_stats.mark_started/heartbeat har 30s yozadi).
     stats = _read_json(USER_CLIENT_STATS)

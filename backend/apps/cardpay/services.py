@@ -30,6 +30,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
+from apps.settings_app import service_state
 from apps.settings_app.models import Setting
 from .models import CardPaymentMessage, CardTopupRequest, SuspiciousPayment, parse_amounts_from_text
 
@@ -995,6 +996,10 @@ def build_health_report() -> str:
     _check('Public API', tunnel_ok, '' if tunnel_ok else ('API URL topilmadi' if not tunnel_url else 'javob bermayapti'))
 
     # 4) User Client (worker itself)
+    # Supervisor qarori eng kuchli signal: crash-loop'dagi worker har
+    # restart'da yangi heartbeat yozib, keyin o'ladi — heartbeat yangi bo'lsa
+    # ham u ISHLAMAYAPTI ("bazida heartbeat ochib qolayapti").
+    _uc_failure = service_state.failure_reason('userclient')
     uc_ok, uc_detail = False, 'stats topilmadi'
     uc_starting = False
     try:
@@ -1013,7 +1018,9 @@ def build_health_report() -> str:
         pass
     if not uc_ok and _container_started_recently():
         uc_starting = True
-    if uc_starting:
+    if _uc_failure:
+        _check('User Client', False, f'jarayon ishlamayapti ({_uc_failure})')
+    elif uc_starting:
         _check('User Client', True, 'ishga tushmoqda…')
     elif not uc_ok:
         # Sessiya umuman yo'q bo'lsa — worker kirishni kutmoqda, bu noto'g'ri

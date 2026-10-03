@@ -24,6 +24,32 @@ launcher owns the killing. The rule is deliberately conservative:
 DEFAULT_MAX_STRIKES = 3
 
 
+# Service names are the ones `_supervise` registers in cloud_launcher.py.
+def heartbeat_source(name):
+    """Which heartbeat belongs to a supervised service?
+
+    Returns (kind, arg):
+      • ('setting', key) — a Settings row: the bot's polling lock and the
+        slot-1 user-client worker both publish there;
+      • ('account', slot) — slot >= 2 workers NEVER write the shared Settings
+        key, they only refresh their own UserClientAccount.last_heartbeat, so
+        watching the shared key for them would read another slot's liveness;
+      • (None, None) — no heartbeat: daphne exits are already handled.
+    """
+    upper = (name or '').upper()
+    if upper == 'BOT':
+        return 'setting', 'bot_polling_lock'
+    if upper.startswith('USERCLIENT'):
+        suffix = upper[len('USERCLIENT'):] or '1'
+        if suffix == '1':
+            return 'setting', 'user_client_worker_heartbeat_at'
+        try:
+            return 'account', int(suffix)
+        except ValueError:
+            return None, None
+    return None, None
+
+
 def evaluate(age_s, limit_s, strikes, max_strikes=DEFAULT_MAX_STRIKES):
     """Fold one probe into the strike counter.
 

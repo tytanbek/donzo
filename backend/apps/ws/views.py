@@ -129,6 +129,14 @@ def health_check(request):
         pass
     bot_ok = bot_age is not None and bot_age < BOT_FRESH_SECONDS
     uc_ok = uc_age is not None and uc_age < UC_FRESH_SECONDS
+    # Supervisor qarori heartbeat'dan ustun: crash-loop'dagi worker har
+    # restart'da yangi heartbeat yozib, keyin o'ladi — heartbeat yangi bo'lsa
+    # ham u ISHLAMAYAPTI ("bazida heartbeat ochib qolayapti").
+    from apps.settings_app import service_state
+    user_client_state = service_state.read_service_state('userclient')
+    uc_failure = service_state.failure_reason('userclient')
+    if uc_failure:
+        uc_ok = False
 
     return JsonResponse({
         'status': 'ok' if db_ok else 'error',
@@ -143,6 +151,8 @@ def health_check(request):
         'user_client': 'ok' if uc_ok else 'stale',
         'bot_age_s': None if bot_age is None else int(bot_age),
         'user_client_age_s': None if uc_age is None else int(uc_age),
+        'user_client_state': user_client_state,
+        'user_client_error': uc_failure,
         'version': '1.0',
     })
 

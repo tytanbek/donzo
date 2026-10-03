@@ -266,24 +266,69 @@ def _all_procs() -> list:
         return list(_PROCS.items())
 
 
-def _heartbeat_age(key: str):
-    """Age (s) of a Settings heartbeat row, or None when unreadable."""
+def _heartbeat_age(name: str):
+    """Age (s) of the heartbeat that belongs to `name`, or None if unknown."""
     try:
-        from apps.settings_app.models import Setting
-        from apps.ws.views import _hb_age
-        return _hb_age(Setting.get_setting(key, ''))
+        import django
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        django.setup()
+        from apps.security.hang_watchdog import heartbeat_source
+
+        kind, arg = heartbeat_source(name)
+        if kind == 'setting':
+            from apps.settings_app.models import Setting
+            from apps.ws.views import _hb_age
+            return _hb_age(Setting.get_setting(arg, ''))
+        if kind == 'account':
+            from django.utils import timezone
+            from apps.cardpay.models import UserClientAccount
+            row = (UserClientAccount.objects.filter(slot=arg)
+                   .only('last_heartbeat').first())
+            if row is None or row.last_heartbeat is None:
+                return None
+            return (timezone.now() - row.last_heartbeat).total_seconds()
     except Exception:
         return None  # DB hiccup — unknown liveness must never kill a process
+    return None
 
 
 def _hang_limit(name: str):
-    """(heartbeat key, max age) for a supervised service; (None, None) → skip."""
-    upper = name.upper()
-    if upper == 'BOT':
-        return 'bot_polling_lock', BOT_HANG_SECONDS
-    if upper.startswith('USERCLIENT'):
-        return 'user_client_worker_heartbeat_at', UC_HANG_SECONDS
-    return None, None  # daphne has no heartbeat — an exit is already handled
+    """Seconds `name`'s heartbeat may stay silent before the owner is hung."""
+    try:
+        from apps.security.hang_watchdog import heartbeat_source
+        kind, _arg = heartbeat_source(name)
+    except Exception:
+        return None
+    if kind is None:
+        return None  # daphne has no heartbeat — an exit is already handled
+    return BOT_HANG_SECONDS if name.upper() == 'BOT' else UC_HANG_SECONDS
+
+
+def _clear_uc_heartbeat(name: str):
+    """O'lgan slot-1 worker'ning heartbeat'ini o'chiradi.
+
+    `user_client_worker_heartbeat_at` ni faqat slot-1 worker yozadi (slot>=2
+    o'z UserClientAccount.last_heartbeat'ini yangilaydi). Jarayon o'lganda
+    kalitni bo'shatamiz: aks holda /health/, health report va admin panel
+    o'lik workerni "yangi heartbeat" bilan tirik ko'rsatishda davom etadi.
+    Boshqa USERCLIENT jarayoni hali tirik bo'lsa tegmaymiz.
+    """
+    if (name.upper().replace('USERCLIENT', '') or '1') != '1':
+        return
+    with _PROCS_LOCK:
+        alive = [n for n, p in _PROCS.items()
+                 if n.upper().startswith('USERCLIENT') and p.poll() is None]
+    if alive:
+        return
+    try:
+        import django
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        django.setup()
+        from apps.settings_app.models import Setting
+        Setting.set_setting('user_client_worker_heartbeat_at', '')
+        Setting.clear_cache()
+    except Exception as exc:
+        _log(name, f'heartbeat tozalanmadi: {type(exc).__name__}: {str(exc)[:120]}')
 
 
 def _kill_hung(name: str, proc, age, limit: int):
@@ -316,10 +361,10 @@ def _watchdog_loop():
             from apps.security.hang_watchdog import evaluate
 
             for name, proc in _all_procs():
-                key, limit = _hang_limit(name)
-                if not key or proc.poll() is not None:
+                limit = _hang_limit(name)
+                if not limit or proc.poll() is not None:
                     continue  # chiqqan jarayonni `_supervise` o'zi ko'taradi
-                age = _heartbeat_age(key)
+                age = _heartbeat_age(name)
                 strikes[name], kill = evaluate(age, limit, strikes.get(name, 0))
                 if kill:
                     strikes[name] = 0
@@ -384,6 +429,11 @@ def _supervise(name, cmd):
         lived = time.time() - _t0
         _svc_state(name, 'exited' if rc == 0 else 'crashed', rc=rc,
                    lived_s=int(lived), restarts=restarts, backoff_s=backoff)
+        if is_userclient:
+            # Jarayon o'ldi — heartbeat ham "o'chishi" kerak. Aks holda
+            # panel/health uni oxirgi start'dan qolgan yangi heartbeat bilan
+            # "ochiq" ko'rsatib turadi ("bazida heartbeat ochib qolayapti").
+            _clear_uc_heartbeat(name)
         if rc == 0:
             _log(name, f"chiqdi (rc=0) — {backoff}s keyin qayta ishga tushadi")
         else:
@@ -391,19 +441,14 @@ def _supervise(name, cmd):
         if rc in (4, 5) and is_userclient:
             backoff = 300
         if is_userclient:
+            # Backoff davomida heartbeat YOZILMAYDI: ishlamayotgan jarayonni
+            # "tirik" ko'rsatish health report va /health/ ni chalg'itardi.
+            # Holatni svc_state'ga yozamiz — monitoring "restart kutilmoqda"
+            # ni shu yerdan o'qiydi (apps/settings_app/service_state.py).
+            _svc_state(name, 'waiting_restart', rc=rc, restarts=restarts,
+                       backoff_s=backoff)
             waited = 0
             while not _stop.is_set() and waited < backoff:
-                # Backoff davomida heartbeat yozamiz — health report
-                # "heartbeat eskirgan" emas, "restart kutilmoqda" ko'rsatsin.
-                try:
-                    import django as _hb_dj
-                    _hb_dj.setup()
-                    from apps.settings_app.models import Setting
-                    import datetime as _hb_dt
-                    Setting.set_setting('user_client_worker_heartbeat_at',
-                                        _hb_dt.datetime.now(_hb_dt.timezone.utc).isoformat())
-                except Exception:
-                    pass
                 if os.path.exists(restart_flag):
                     try:
                         os.remove(restart_flag)
