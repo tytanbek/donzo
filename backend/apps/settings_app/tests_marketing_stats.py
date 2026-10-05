@@ -306,6 +306,9 @@ class GroupRoastTests(TestCase):
         from apps.settings_app.models import MarketingGroupMember, Setting
         Setting.clear_cache()
         Setting.set_setting('marketing_roast_enabled', 'true')
+        # Roast (proaktiv suhbat) endi faqat mention-only O'CHIRILGANDA ishlaydi:
+        # default holat — bot guruhda faqat eslatilganda yozadi.
+        Setting.set_setting('marketing_mention_only', 'false')
         Setting.set_setting('telegram_bot_token', 'fake:token')
         Setting.set_setting('payment_report_chat_id', '-100999')  # operatsion — hech qachon yozilmaydi
         MarketingGroupMember.objects.all().delete()

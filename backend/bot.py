@@ -1689,6 +1689,11 @@ def _send_group_roast():
         from django.utils import timezone
         from datetime import timedelta
         from apps.settings_app.models import MarketingGroupMember, MarketingGroupStat, Setting
+        # MENTION-ONLY (default True): bot o'zi suhbatga qo'shilmaydi — faqat
+        # eslatilganda yoki qora ro'yxatdagi odam yozganda gapiradi. Eski
+        # "roast" xulqi faqat marketing_mention_only='False' bo'lsa ishlaydi.
+        if _mention_only_enabled():
+            return
         if not (Setting.get_setting('marketing_roast_enabled', 'true') or 'false').lower() == 'true':
             return
         token = Setting.get_setting('telegram_bot_token', '') or ''
@@ -2022,6 +2027,138 @@ async def _send_group_answer(context: ContextTypes.DEFAULT_TYPE, msg, chat_id: s
         return False, str(exc)
 
 
+# ── GURUH SIYOSATI: FAQAT ESLATILGANDA + QORA RO'YXATDAGILAR ──────────────
+# DONZO guruhda HAR BIR xabarga aralashmaydi. Bot faqat quyidagi hollarda
+# yozadi:
+#   1) eslatilganda — reply-to-bot, @mention, gap boshida "donzo" yoki gap
+#      ichida "donzo"/bot username;
+#   2) qora ro'yxatdagi (blacklist) odam yozganda — xavfsizlik ogohlantirishi.
+# Eski TURBO proaktiv xulq (bot o'zi suhbatga qo'shilishi, "roast" loop) endi
+# O'CHIQ: uni faqat admin marketing_mention_only='False' qilib qaytaradi.
+_DEFAULT_BLACKLIST_NOTICE = (
+    "⚠️ <b>Diqqat!</b> {name} — DONZO qora ro'yxatidagi foydalanuvchi.\n\n"
+    "U bilan to'lov, oldi-sotdi va shaxsiy ma'lumot almashishda ehtiyot bo'ling. "
+    "Xavfsiz xarid faqat @DONZOROBOT orqali — tekshirilgan va kafolatlangan. 🛡"
+)
+_BLACKLIST_WARN_TTL = 6 * 3600   # bir odam haqida bir guruhda ogohlantirish oralig'i
+_BLACKLIST_WARN_MAX = 500        # xotira cheksiz o'smasin
+_BLACKLIST_WARNED: dict = {}
+
+
+def _mention_only_enabled() -> bool:
+    """Bot guruhda faqat eslatilganda yozadimi? (default True)
+
+    True — bot o'zi suhbatga qo'shilmaydi: faqat reply / @mention / "donzo".
+    False — eski TURBO proaktiv xulq qaytadi (admin ataylab yoqsa).
+    """
+    try:
+        raw = Setting.get_setting('marketing_mention_only', 'True') or 'True'
+        return str(raw).strip().lower() != 'false'
+    except Exception:
+        return True
+
+
+def _is_blacklisted_group_user(tg_id, username: str) -> bool:
+    """Guruhda yozgan odam qora ro'yxatdami?
+
+    Ikki manba: (1) platformadagi User.is_blacklisted — telegram_id, username
+    yoki telegram_username mos kelsa; (2) security_blacklist sozlamasi
+    (vergul bilan ajratilgan username / telegram id ro'yxati).
+    Xato bo'lsa False — bot oqimi buzilmaydi.
+    """
+    try:
+        from django.db.models import Q
+        from apps.users.models import User
+        tg = str(tg_id or '').strip()
+        uname = (username or '').strip().lstrip('@')
+        cond = Q()
+        if tg:
+            cond |= Q(telegram_id=tg)
+        if uname:
+            cond |= Q(username__iexact=uname) | Q(telegram_username__iexact=uname)
+        if cond and User.objects.filter(cond, is_blacklisted=True).exists():
+            return True
+    except Exception:
+        pass
+    try:
+        raw = (Setting.get_setting('security_blacklist', '') or '').strip()
+        if not raw:
+            return False
+        items = {x.strip().lower().lstrip('@') for x in raw.split(',') if x.strip()}
+        uname = (username or '').strip().lower().lstrip('@')
+        if uname and uname in items:
+            return True
+        tg = str(tg_id or '').strip()
+        return bool(tg and tg in items)
+    except Exception:
+        return False
+
+
+db_is_blacklisted = sync_to_async(_is_blacklisted_group_user)
+
+
+def _blacklist_warn_allowed(chat_id: str, user_key: str) -> bool:
+    """Bir odam haqida bir guruhda 6 soatda faqat bir marta ogohlantirish."""
+    try:
+        now = time.time()
+        key = f'{chat_id}:{user_key}'
+        last = _BLACKLIST_WARNED.get(key)
+        if last and now - float(last) < _BLACKLIST_WARN_TTL:
+            return False
+        if len(_BLACKLIST_WARNED) > _BLACKLIST_WARN_MAX:
+            cutoff = now - _BLACKLIST_WARN_TTL
+            for k, ts in list(_BLACKLIST_WARNED.items()):
+                try:
+                    if float(ts) < cutoff:
+                        _BLACKLIST_WARNED.pop(k, None)
+                except Exception:
+                    _BLACKLIST_WARNED.pop(k, None)
+        _BLACKLIST_WARNED[key] = now
+        return True
+    except Exception:
+        return True
+
+
+async def _send_blacklist_warning(context: ContextTypes.DEFAULT_TYPE, msg, chat_id: str,
+                                  user, username: str) -> bool:
+    """Qora ro'yxatdagi odam guruhda yozganda — ogohlantirish yuboradi.
+
+    Mention/reply SHART EMAS: bu xavfsizlik xabari (marketing sozlamalari
+    o'chirilgan bo'lsa ham ishlaydi). Matnni admin `marketing_blacklist_notice`
+    sozlamasi orqali o'zgartirishi mumkin ({name} — foydalanuvchi nomi uchun
+    joy). Bir odam haqida bir guruhda 6 soatda faqat bir marta yoziladi.
+    Hech qachon exception tashlamaydi.
+    """
+    try:
+        from apps.security import staff_ai as _sa
+        key = str(getattr(user, 'id', '') or username or '?')
+        if not _blacklist_warn_allowed(chat_id, key):
+            return False
+        who = ((getattr(user, 'first_name', '') or '').strip() or username
+               or 'Foydalanuvchi')
+        try:
+            # DB o'qish async kontekstda — sync_to_async shart (aks holda
+            # SynchronousOnlyOperation bilan sozlama o'qilmay qoladi).
+            tpl = (await sync_to_async(Setting.get_setting)(
+                'marketing_blacklist_notice', '') or '').strip()
+        except Exception:
+            tpl = ''
+        text = (tpl or _DEFAULT_BLACKLIST_NOTICE).replace('{name}', _sa.escape_html(who))
+        ok, _send_err = await _send_group_answer(context, msg, chat_id, text)
+        if not ok:
+            return False
+        try:
+            from apps.settings_app.models import MarketingGroupStat
+            await sync_to_async(MarketingGroupStat.record)(
+                chat_id, getattr(msg.chat, 'title', '') or '', 'reply')
+        except Exception:
+            pass
+        print(f"[MARKETING] Qora ro'yxat ogohlantirishi: {username} ({chat_id})", flush=True)
+        return True
+    except Exception:
+        return False
+
+
 async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  text: str, msg, user, triggered: bool):
     """Boshqa guruhlarda selektiv marketing javob: qiziq xabarlarga javob + reklama.
@@ -2041,8 +2178,9 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
         enabled = (await sync_to_async(Setting.get_setting)('marketing_group_enabled', 'true') or 'false').lower() == 'true'
         # TURBO rejim: DONZO guruhlarda aniq faol bo'lishi kerak — admin
         # panel gate'i o'chirilgan bo'lsa ham turbo uni chetlab o'tadi.
-        if not enabled and not _turbo_gate:
-            return
+        # MUHIM: bu yerda RETURN qilinmaydi — marketing o'chirilgan bo'lsa ham
+        # qora ro'yxat ogohlantirishi ishlashi kerak. Qaror pastda.
+        marketing_on = bool(enabled or _turbo_gate)
         base_prob = float(await sync_to_async(Setting.get_setting)('marketing_ad_prob', '0.03') or 0.03)
         base_rate = int(await sync_to_async(Setting.get_setting)('marketing_rate_per_hour', '5') or 5)
         # TURBO rejim (ANGRY kuchaytirilgan versiyasi) — guruhda ancha faolroq:
@@ -2055,7 +2193,10 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
         ad_prob = base_prob
         rate_max = max(base_rate, _TURBO_RATE_PER_HOUR) if mode_turbo else base_rate
     except Exception:
-        ad_prob, rate_max, mode_turbo = 0.03, 5, False
+        # Sozlamalarni o'qib bo'lmadi — eski xulq saqlanadi: eslatilganda javob
+        # beriladi (mention-only gate baribir ishlaydi, o'zi suhbatga
+        # qo'shilmaydi). Xato tufayli bot butunlay jim qolib ketmasin.
+        ad_prob, rate_max, mode_turbo, marketing_on = 0.03, 5, False, True
 
     # Bot-bot loopdan saqlanish
     if getattr(user, 'is_bot', False):
@@ -2063,15 +2204,6 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
 
     chat_id = str(msg.chat.id)
     username = getattr(user, 'username', None) or ''
-    # A'zoni eslab qolamiz — keyin username orqali murojaat qilish uchun
-    # (DB yozuvi async kontekstda — sync_to_async shart, aks holda
-    # SynchronousOnlyOperation bilan a'zo DB'ga yozilmaydi)
-    await sync_to_async(_record_group_member)(chat_id, username,
-                                              getattr(user, 'first_name', '') or '',
-                                              getattr(user, 'id', None))
-    # Kim nima deganini eslab qolamiz: DONZO keyin BELGILAMASDAN, aynan shu
-    # gapga reply qilib javob beradi (ommaviy ping yo'q).
-    _remember_group_message(chat_id, username, getattr(msg, 'message_id', None), text)
     # Operatsion (staff/hisobot/monitor) guruhlarni o'tkazib yuborish
     try:
         from apps.settings_app.group_access import marketing_skip_chat_ids
@@ -2081,20 +2213,48 @@ async def _marketing_group_reply(update: Update, context: ContextTypes.DEFAULT_T
     except Exception:
         pass
 
+    # ── QORA RO'YXAT: MENTION SHART EMAS ──
+    # Qora ro'yxatdagi odam guruhda yozsa, bot HAR DOIM ovozini chiqaradi
+    # (marketing sozlamalari o'chirilgan bo'lsa ham) — guruh ogohlanadi.
+    # Bunday xabarga AI marketing javobi yozilmaydi: faqat aniq xavfsizlik
+    # ogohlantirishi yuboriladi.
+    if await db_is_blacklisted(getattr(user, 'id', None), username):
+        await _send_blacklist_warning(context, msg, chat_id, user, username)
+        return
+
+    # Marketing o'chirilgan (va TURBO rejim ham emas) — standart javob yo'q.
+    # Qora ro'yxat ogohlantirishi yuqorida allaqachon ko'rib chiqildi.
+    if not marketing_on:
+        return
+
+    # A'zoni eslab qolamiz — keyin username orqali murojaat qilish uchun
+    # (DB yozuvi async kontekstda — sync_to_async shart, aks holda
+    # SynchronousOnlyOperation bilan a'zo DB'ga yozilmaydi)
+    await sync_to_async(_record_group_member)(chat_id, username,
+                                              getattr(user, 'first_name', '') or '',
+                                              getattr(user, 'id', None))
+    # Kim nima deganini eslab qolamiz: DONZO keyin BELGILAMASDAN, aynan shu
+    # gapga reply qilib javob beradi (ommaviy ping yo'q).
+    _remember_group_message(chat_id, username, getattr(msg, 'message_id', None), text)
+
     # Suhbatni kuzatamiz
     conv = _track_group_conversation(chat_id, text)
 
-    # ── MUROJAT + TURBO PROAKTIV ──
-    # Oddiy rejimda bot faqat Reply / @-mention / "donzo" yozilganda gapiradi.
-    # TURBO rejimda (angry kuchaytirilgan) DONZO o'zi ham suhbatga qo'shiladi:
-    # faol suhbat bo'lsa tasodifiy xabarlarga ham o'zi javob beradi — guruhda
-    # jonli "yashaydigan" a'zodek. Limit va xavfsizlik tekshiruvlari saqlanadi.
+    # ── FAQAT ESLATILGANDA ──
+    # Bot guruhda faqat unga murojaat qilinganda yozadi: reply-to-bot, @mention
+    # yoki "donzo" so'zi. O'zi suhbatga qo'shilmaydi — shuning uchun guruhda
+    # "har bir xabarga aralashish" yo'q. Eski TURBO proaktiv xulq (faol
+    # suhbatda o'zi qo'shilish) endi faqat admin marketing_mention_only='False'
+    # qilib ataylab yoqqanda qaytadi.
     # (Eslatma: yozish uchun botka admin huquqi shart emas — oddiy a'zo ham yozadi.)
     if not triggered:
+        if await sync_to_async(_mention_only_enabled)():
+            return
         if not (mode_turbo and _conversation_active(
                 conv, _TURBO_ACTIVE_WINDOW_S, _TURBO_ACTIVE_MIN_MSGS)):
             return
         # Turbo proaktiv: hamma xabarga emas — faol suhbatda o'zi qo'shiladi.
+        # (Faqat marketing_mention_only='False' bo'lganda shu yergacha yetib keladi.)
         if random.random() > _TURBO_PROACTIVE_PROB:
             return
 
@@ -2245,6 +2405,15 @@ async def staff_ai_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_username = ''
     mentioned = bool(bot_username) and f'@{bot_username.lower()}' in text.lower()
     starts_with_donzo = re.match(r'^donzo[\s,:!.]*', text, flags=re.IGNORECASE) is not None
+    # "donzo" so'zi (yoki bot username) gapning ISTALGAN joyida eslansa ham —
+    # bot unga javob beradi. Guruhda bot faqat shu holatlarda gapiradi
+    # (mention-only), qolgan xabarlarga ARALASHMAYDI.
+    # Sufiks ham hisobga olinadi ("donzoda", "donzodan"...), lekin boshqa
+    # so'z ichidan (masalan "chdonzo") ushlanmaydi.
+    mentions_donzo = bool(re.search(r'(?<![\w@])donzo', text, flags=re.IGNORECASE))
+    if not mentions_donzo and bot_username:
+        mentions_donzo = bool(re.search(
+            rf'(?<![\w@]){re.escape(bot_username)}', text, flags=re.IGNORECASE))
     is_private = bool(msg.chat) and msg.chat.type == 'private'
     is_group = bool(msg.chat) and msg.chat.type in ('group', 'supergroup')
 
@@ -2256,7 +2425,7 @@ async def staff_ai_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 getattr(msg, 'message_id', None), text)
 
     # ── Staff yo'li (trigger bo'lsa) ──
-    if is_reply_to_bot or mentioned or starts_with_donzo or is_private:
+    if is_reply_to_bot or mentioned or starts_with_donzo or mentions_donzo or is_private:
         db_user = await db_user_by_tg(str(user.id))
         if db_user is not None and db_user.role in STAFF_ROLES:
             if mentioned and bot_username:
@@ -2281,7 +2450,7 @@ async def staff_ai_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_group:
         await _marketing_group_reply(
             update, context, text, msg, user,
-            triggered=bool(is_reply_to_bot or mentioned or starts_with_donzo),
+            triggered=bool(is_reply_to_bot or mentioned or starts_with_donzo or mentions_donzo),
         )
 
 

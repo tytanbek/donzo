@@ -361,6 +361,15 @@ class SiteSetting:
         # marketing_roast_interval_min — murojaatlar orasidagi interval (daqiqa).
         'marketing_roast_enabled': 'False',
         'marketing_roast_interval_min': '20',
+        # marketing_mention_only — DONZO guruhda faqat ESLATILGANDA yozadi
+        #   (reply / @mention / "donzo" so'zi), har bir xabarga aralashmaydi.
+        #   Bundan tashqari bot qora ro'yxatdagi odam yozganda ham ogohlantirish
+        #   yozadi (bu sozlamaga bog'liq emas). 'False' qilinsa eski TURBO
+        #   proaktiv xulq (bot o'zi suhbatga qo'shiladi) qaytadi;
+        # marketing_blacklist_notice — qora ro'yxatdagi odam guruhda yozganda
+        #   yuboriladigan ogohlantirish matni ({name} — foydalanuvchi nomi).
+        'marketing_mention_only': 'True',
+        'marketing_blacklist_notice': '',
     }
 
     @classmethod

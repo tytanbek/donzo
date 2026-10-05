@@ -55,6 +55,8 @@ const SLIDERS: SliderDef[] = [
 
 export default function AdminMarketingPage() {
   const [enabled, setEnabled] = useState<'true' | 'false'>('false');
+  const [mentionOnly, setMentionOnly] = useState<'true' | 'false'>('true');
+  const [blacklistNotice, setBlacklistNotice] = useState('');
   const [dailyEnabled, setDailyEnabled] = useState<'true' | 'false'>('false');
   const [dailyTime, setDailyTime] = useState('09:00');
   const [dailyImage, setDailyImage] = useState('');
@@ -74,6 +76,8 @@ export default function AdminMarketingPage() {
         const res = await adminAPI.settings();
         const s = res.data || res;
         setEnabled((String(s.marketing_group_enabled ?? 'false')).toLowerCase() === 'true' ? 'true' : 'false');
+        setMentionOnly((String(s.marketing_mention_only ?? 'true')).toLowerCase() === 'false' ? 'false' : 'true');
+        setBlacklistNotice(String(s.marketing_blacklist_notice ?? ''));
         setDailyEnabled((String(s.marketing_daily_enabled ?? 'false')).toLowerCase() === 'true' ? 'true' : 'false');
         setDailyTime(String(s.marketing_daily_time ?? '09:00') || '09:00');
         setDailyImage(String(s.marketing_daily_image ?? ''));
@@ -121,6 +125,8 @@ export default function AdminMarketingPage() {
     try {
       await adminAPI.updateSettings({
         marketing_group_enabled: enabled,
+        marketing_mention_only: mentionOnly,
+        marketing_blacklist_notice: blacklistNotice.trim(),
         marketing_ad_prob: String((values.marketing_ad_prob || 0) / 100),
         marketing_rate_per_hour: String(values.marketing_rate_per_hour || 5),
         marketing_ads_per_day: String(values.marketing_ads_per_day ?? 2),
@@ -201,6 +207,62 @@ export default function AdminMarketingPage() {
             }`}
           />
         </button>
+      </motion.div>
+
+      {/* ═══ Javob berish tartibi: faqat eslatilganda ═══ */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl border p-5 mb-6 ${
+          mentionOnly === 'true'
+            ? 'border-[#00F5FF]/40 bg-[#00F5FF]/10'
+            : 'border-[#F59E0B]/40 bg-[#F59E0B]/10'
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-4">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+            mentionOnly === 'true' ? 'bg-[#00F5FF]/15 border-[#00F5FF]/20' : 'bg-[#F59E0B]/15 border-[#F59E0B]/20'
+          }`}>
+            <FiMessageSquare className={`w-5 h-5 ${mentionOnly === 'true' ? 'text-[#00F5FF]' : 'text-[#F59E0B]'}`} />
+          </div>
+          <div className="flex-1 min-w-[220px]">
+            <p className={`text-sm font-bold ${mentionOnly === 'true' ? 'text-[#00F5FF]' : 'text-[#F59E0B]'}`}>
+              {mentionOnly === 'true' ? 'Faqat eslatilganda javob — YOQILGAN' : 'Proaktiv suhbat — YOQILGAN'}
+            </p>
+            <p className="text-xs text-[#94A3B8] mt-0.5">
+              {mentionOnly === 'true'
+                ? 'Bot guruhdagi har bir xabarga aralashmaydi: faqat reply qilinganda, @mention qilinganda yoki "donzo" deb yozilganda javob beradi. Qora ro\'yxatdagi odam yozsa — har doim ogohlantiradi.'
+                : "Bot faol suhbatlarga o'zi ham qo'shiladi (eski TURBO xulq). Guruh a'zolari bunga tayyor bo'lsin."}
+            </p>
+          </div>
+          <button
+            onClick={() => setMentionOnly(mentionOnly === 'true' ? 'false' : 'true')}
+            className={`relative w-14 h-[30px] rounded-full transition-colors duration-300 border shrink-0 ${
+              mentionOnly === 'true' ? 'bg-[#00F5FF]/30 border-[#00F5FF]/40' : 'bg-white/5 border-white/10'
+            }`}
+          >
+            <span
+              className={`absolute top-[3px] w-6 h-6 rounded-full transition-all duration-300 shadow-md ${
+                mentionOnly === 'true' ? 'left-[29px] bg-[#00F5FF]' : 'left-[3px] bg-[#64748B]'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-5">
+          <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-2">
+            Qora ro'yxat ogohlantirishi matni (bo'sh — standart matn)
+          </label>
+          <textarea
+            value={blacklistNotice}
+            onChange={(e) => setBlacklistNotice(e.target.value)}
+            rows={3}
+            placeholder="⚠️ Diqqat! {name} — DONZO qora ro'yxatidagi foydalanuvchi..."
+            className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-white text-sm focus:outline-none focus:border-[#00F5FF]/50"
+          />
+          <p className="text-[11px] text-[#64748B] mt-2">
+            <strong className="text-white">{'{name}'}</strong> — foydalanuvchi ismi bilan almashtiriladi. HTML teglar (masalan &lt;b&gt;) ishlaydi.
+          </p>
+        </div>
       </motion.div>
 
       {/* ═══ Sliders grid ═══ */}
@@ -484,10 +546,11 @@ export default function AdminMarketingPage() {
             <p className="font-semibold text-white text-sm mb-2">Qanday ishlaydi?</p>
             <ol className="list-decimal list-inside space-y-1.5">
               <li>Bot istalgan guruhga qo'shilganda — <strong className="text-white">salomlashish + reklama</strong> yuboradi</li>
-              <li>Guruhdagi har bir xabarga javob bermaydi — <strong className="text-white">qiziqarli mavzular</strong> (o'yin, top-up, pul, premium) tanlab olinadi</li>
+              <li>Guruhdagi har bir xabarga aralashmaydi — javob faqat <strong className="text-white">eslatilganda</strong> yoziladi: reply, @mention yoki donzo so'zi</li>
+              <li><strong className="text-white">Qora ro'yxatdagi odam</strong> guruhda yozsa — bot mention bo'lmasa ham ogohlantiradi</li>
               <li>Javob chiqarilganda — <strong className="text-white">Reklama ehtimoli</strong> bo'yicha platforma havolasi qo'shiladi</li>
               <li><strong className="text-white">Soatlik limit</strong> — spam bo'lmasligi uchun har guruhda soatiga maks javob sonini cheklaydi</li>
-              <li><strong className="text-white">Kunlik reklama limiti</strong> — har guruh kuniga ko'pi bilan shuncha reklama ko'radi (default 2). Limit tugasa reklama qo'shilmaydi, lekin DONZO suhbatda yozishda davom etadi</li>
+              <li><strong className="text-white">Kunlik reklama limiti</strong> — har guruh kuniga ko'pi bilan shuncha reklama ko'radi (default 2)</li>
               <li>AI ning joriy rejimi (<strong className="text-white">muloyim / angry</strong>) marketing javoblariga ham qo'llanadi</li>
             </ol>
             <p className="mt-3 text-[#475569]">
