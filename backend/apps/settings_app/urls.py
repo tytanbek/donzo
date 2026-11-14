@@ -8,4 +8,5 @@ urlpatterns = [
     path('fragment-status/', views.FragmentStatusView.as_view(), name='admin-fragment-status'),
     path('fragment-sync/', views.FragmentPriceSyncView.as_view(), name='admin-fragment-sync'),
     path('marketing-stats/', views.MarketingStatsView.as_view(), name='admin-marketing-stats'),
+    path('proof-channel/test/', views.ProofChannelTestView.as_view(), name='admin-proof-channel-test'),
 ]

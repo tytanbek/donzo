@@ -133,6 +133,17 @@ const KEY_GROUPS: KeyGroup[] = [
     ],
   },
   {
+    id: 'proof',
+    title: 'Isbot / hisobot kanali',
+    icon: FiCheckCircle,
+    accent: '#22C55E',
+    description: "Bajarilgan har bir buyurtma shu Telegram kanalga isbot sifatida yuboriladi (mijoz ma'lumotlari yashiriladi)",
+    fields: [
+      { key: 'proof_channel_enabled', label: 'Kanalga yuborish yoqilgan', isBool: true, hint: "Yoqilsa, buyurtma bajarilgan zahoti kanalga xabar ketadi" },
+      { key: 'proof_channel_id', label: 'Kanal ID yoki @username', placeholder: '-1001234567890 yoki @donzo_isbot', hint: "Botni kanalga ADMIN qilib qo'shing (xabar yuborish huquqi bilan)" },
+    ],
+  },
+  {
     id: 'security',
     title: 'Security / Anti-Fraud (Gemini AI)',
     icon: FiShield,
@@ -241,6 +252,19 @@ export default function AdminKeysPage() {
   const totalCount = useMemo(() => {
     return KEY_GROUPS.flatMap(g => g.fields.map(f => f.key)).length;
   }, []);
+
+  const [proofTesting, setProofTesting] = useState(false);
+  const handleProofTest = async () => {
+    setProofTesting(true);
+    try {
+      const res = await adminAPI.proofChannelTest();
+      toast.success(res.data?.detail || 'Sinov xabari yuborildi');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Kanalga yuborib bo\'lmadi');
+    } finally {
+      setProofTesting(false);
+    }
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -394,6 +418,21 @@ export default function AdminKeysPage() {
                   {groupConfigured}/{group.fields.length}
                 </span>
               </div>
+
+              {/* Isbot kanali: sinov xabari */}
+              {group.id === 'proof' && (
+                <div className="mb-5">
+                  <button
+                    type="button"
+                    onClick={handleProofTest}
+                    disabled={proofTesting}
+                    className="pill-btn px-4 py-2 text-xs font-semibold text-emerald-300 disabled:opacity-50"
+                  >
+                    {proofTesting ? 'Yuborilmoqda...' : '🧪 Kanalga sinov xabarini yuborish'}
+                  </button>
+                  <p className="text-[11px] text-[#64748B] mt-2">Avval sozlamalarni saqlang, keyin sinab ko'ring.</p>
+                </div>
+              )}
 
               {/* Fragment: live status + price sync card */}
               {group.id === 'fragment' && (

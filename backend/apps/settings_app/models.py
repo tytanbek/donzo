@@ -314,6 +314,12 @@ class SiteSetting:
         'payment_card_holder': '',
         'payment_card_monitor_enabled': 'False',
 
+        # ── Isbot / hisobot kanali ──
+        # Bajarilgan har bir buyurtma shu kanalga (mijoz ma'lumotlari
+        # yashirilgan holda) yuboriladi. Bot kanalda admin bo'lishi shart.
+        'proof_channel_enabled': 'False',
+        'proof_channel_id': '',
+
         # ── Security / Anti-Fraud (Gemini AI risk engine) ──
         'gemini_api_key': '',
         'gemini_model': 'gemini-3.1-flash-lite',

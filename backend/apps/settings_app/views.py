@@ -378,3 +378,50 @@ class WriteEnvFileView(APIView):
                 'status': 'error',
                 'message': f'.env fayliga yozishda xatolik: {str(e)}',
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProofChannelTestView(APIView):
+    """
+    POST /api/v1/admin/proof-channel/test/
+
+    Isbot kanaliga sinov xabarini yuboradi: bot kanalga yoza olishini
+    (admin huquqi, to'g'ri ID) tekshirish uchun. Telegram xatosini
+    tushunarli matn sifatida qaytaradi.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def post(self, request):
+        import json
+        import urllib.error
+        from apps.orders import proof_channel
+
+        _, chat_id, token = proof_channel.channel_config()
+        chat_id = str(request.data.get('chat_id') or chat_id).strip()
+        if not token:
+            return Response({'ok': False, 'detail': "Bot token sozlanmagan"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not chat_id:
+            return Response({'ok': False, 'detail': "Kanal ID kiritilmagan"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        text = (
+            "🧪 <b>Sinov xabari</b>\n"
+            f"{proof_channel.SEPARATOR}\n"
+            "Isbot kanali ulandi. Endi bajarilgan har bir buyurtma shu yerda "
+            "hisobot sifatida chiqadi."
+        )
+        try:
+            ok = proof_channel.send_text(chat_id, token, text)
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read().decode('utf-8')).get('description', str(exc))
+            except Exception:
+                detail = str(exc)
+            return Response({'ok': False, 'detail': f"Telegram: {detail}"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'ok': False, 'detail': f"Ulanib bo'lmadi: {exc.__class__.__name__}"},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        if not ok:
+            return Response({'ok': False, 'detail': "Telegram xabarni qabul qilmadi"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response({'ok': True, 'detail': 'Sinov xabari yuborildi'})

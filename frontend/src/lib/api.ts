@@ -344,6 +344,7 @@ export const adminAPI = {
     writeEnv: () => api.post('/admin/settings/write-env/', {}),
     fragmentStatus: (params?: any) => api.get('/admin/fragment-status/', { params }),
     fragmentSync: () => api.post('/admin/fragment-sync/', {}),
+    proofChannelTest: () => api.post('/admin/proof-channel/test/', {}),
     marketingStats: () => api.get('/admin/marketing-stats/'),
 };
 
