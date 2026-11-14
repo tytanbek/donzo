@@ -14,7 +14,10 @@ Yuborish fon oqimida, tranzaksiya commit bo'lgandan keyin bajariladi —
 Telegram sekin yoki ishlamasa ham buyurtma jarayoni hech qachon to'xtamaydi.
 """
 import html
+import http.client
+import json
 import logging
+import socket
 import threading
 
 from django.db import transaction
@@ -128,9 +131,61 @@ def channel_config():
     return enabled, chat_id, token
 
 
+SEND_TIMEOUT = 12   # 2 urinish ≈ 24s: admin panel 30s kutadi; avval 8s yetmay qolardi
+SEND_ATTEMPTS = 2
+
+
+class _IPv4HTTPSConnection(http.client.HTTPSConnection):
+    """Faqat IPv4 orqali ulanadi.
+
+    Render konteynerlarida IPv6 yo'nalishi "qora tuynuk" bo'lishi mumkin:
+    Python avval AAAA manzilga ulanmoqchi bo'lib, timeout'gacha osilib qoladi.
+    """
+
+    def connect(self):
+        family, socktype, proto, _, addr = socket.getaddrinfo(
+            self.host, self.port, socket.AF_INET, socket.SOCK_STREAM)[0]
+        sock = socket.create_connection(addr, self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def send_text_verbose(chat_id: str, token: str, text: str, reply_markup=None):
+    """sendMessage → (muvaffaqiyat, izoh). Tarmoq xatosida bir marta qayta uradi."""
+    payload = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'HTML',
+        'disable_web_page_preview': True,
+    }
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
+    body = json.dumps(payload).encode('utf-8')
+
+    last_error = ''
+    for attempt in range(SEND_ATTEMPTS):
+        conn = _IPv4HTTPSConnection('api.telegram.org', 443, timeout=SEND_TIMEOUT)
+        try:
+            conn.request('POST', f'/bot{token}/sendMessage', body=body,
+                         headers={'Content-Type': 'application/json'})
+            resp = conn.getresponse()
+            data = json.loads(resp.read().decode('utf-8') or '{}')
+            if data.get('ok'):
+                return True, ''
+            # Telegram javob berdi, lekin rad etdi (masalan: chat not found) —
+            # qayta urinishdan foyda yo'q.
+            return False, f"Telegram: {data.get('description') or resp.status}"
+        except (OSError, http.client.HTTPException, ValueError) as exc:
+            last_error = f"Ulanib bo'lmadi: {exc.__class__.__name__}"
+            logger.warning('Isbot kanali: urinish %s/%s xato: %s',
+                           attempt + 1, SEND_ATTEMPTS, exc.__class__.__name__)
+        finally:
+            conn.close()
+    return False, last_error
+
+
 def send_text(chat_id: str, token: str, text: str, reply_markup=None) -> bool:
-    from apps.users.telegram_notify import _send_message
-    return _send_message(token, chat_id, text, reply_markup=reply_markup)
+    ok, _ = send_text_verbose(chat_id, token, text, reply_markup)
+    return ok
 
 
 def post_order_proof(order) -> bool:

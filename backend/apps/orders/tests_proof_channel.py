@@ -98,13 +98,22 @@ class ProofChannelTestEndpointTests(TestCase):
         self.client.force_authenticate(self.admin)
         self.url = '/api/v1/admin/proof-channel/test/'
 
-    @mock.patch('apps.orders.proof_channel.send_text', return_value=True)
+    @mock.patch('apps.orders.proof_channel.send_text_verbose', return_value=(True, ''))
     def test_sends_test_message(self, send):
         _configure()
         res = self.client.post(self.url, {}, format='json')
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.data['ok'])
         self.assertEqual(send.call_args.args[0], '-1001234567890')
+
+
+    @mock.patch('apps.orders.proof_channel.send_text_verbose',
+                return_value=(False, 'Telegram: Bad Request: chat not found'))
+    def test_reports_telegram_error(self, _send):
+        _configure()
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('chat not found', res.data['detail'])
 
     def test_requires_channel_id(self):
         _configure(chat_id='')
@@ -126,3 +135,53 @@ class ProofChannelTestEndpointTests(TestCase):
         }, format='json')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(Setting.get_setting('proof_channel_id'), '@donzo_isbot')
+
+
+class ProofChannelSenderTests(TestCase):
+    def _resp(self, payload):
+        resp = mock.Mock(status=200)
+        resp.read.return_value = __import__('json').dumps(payload).encode()
+        return resp
+
+    @mock.patch('apps.orders.proof_channel._IPv4HTTPSConnection')
+    def test_success(self, conn_cls):
+        conn_cls.return_value.getresponse.return_value = self._resp({'ok': True})
+        self.assertEqual(proof_channel.send_text_verbose('-100', 'T', 'hi'), (True, ''))
+        conn_cls.assert_called_once_with('api.telegram.org', 443, timeout=proof_channel.SEND_TIMEOUT)
+
+    @mock.patch('apps.orders.proof_channel._IPv4HTTPSConnection')
+    def test_retries_once_on_timeout(self, conn_cls):
+        conn = conn_cls.return_value
+        conn.request.side_effect = [TimeoutError(), None]
+        conn.getresponse.return_value = self._resp({'ok': True})
+        self.assertEqual(proof_channel.send_text_verbose('-100', 'T', 'hi'), (True, ''))
+        self.assertEqual(conn_cls.call_count, 2)
+
+    @mock.patch('apps.orders.proof_channel._IPv4HTTPSConnection')
+    def test_gives_up_after_two_timeouts(self, conn_cls):
+        conn_cls.return_value.request.side_effect = TimeoutError()
+        ok, detail = proof_channel.send_text_verbose('-100', 'T', 'hi')
+        self.assertFalse(ok)
+        self.assertIn('TimeoutError', detail)
+        self.assertEqual(conn_cls.call_count, proof_channel.SEND_ATTEMPTS)
+
+    @mock.patch('apps.orders.proof_channel._IPv4HTTPSConnection')
+    def test_telegram_rejection_is_not_retried(self, conn_cls):
+        conn_cls.return_value.getresponse.return_value = self._resp(
+            {'ok': False, 'description': 'Forbidden: bot is not a member of the channel chat'})
+        ok, detail = proof_channel.send_text_verbose('-100', 'T', 'hi')
+        self.assertFalse(ok)
+        self.assertIn('not a member', detail)
+        self.assertEqual(conn_cls.call_count, 1)
+
+    @mock.patch('apps.orders.proof_channel.socket.create_connection')
+    @mock.patch('apps.orders.proof_channel.socket.getaddrinfo',
+                return_value=[(2, 1, 6, '', ('149.154.167.220', 443))])
+    def test_connection_uses_ipv4_only(self, gai, create):
+        conn = proof_channel._IPv4HTTPSConnection('api.telegram.org', 443, timeout=5)
+        conn._context = mock.Mock()
+        conn.connect()
+        self.assertEqual(gai.call_args.args[2], proof_channel.socket.AF_INET)
+        create.assert_called_once_with(('149.154.167.220', 443), 5)
+        conn._context.wrap_socket.assert_called_once_with(
+            create.return_value, server_hostname='api.telegram.org')

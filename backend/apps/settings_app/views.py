@@ -391,8 +391,6 @@ class ProofChannelTestView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
 
     def post(self, request):
-        import json
-        import urllib.error
         from apps.orders import proof_channel
 
         _, chat_id, token = proof_channel.channel_config()
@@ -409,19 +407,8 @@ class ProofChannelTestView(APIView):
             "Isbot kanali ulandi. Endi bajarilgan har bir buyurtma shu yerda "
             "hisobot sifatida chiqadi."
         )
-        try:
-            ok = proof_channel.send_text(chat_id, token, text)
-        except urllib.error.HTTPError as exc:
-            try:
-                detail = json.loads(exc.read().decode('utf-8')).get('description', str(exc))
-            except Exception:
-                detail = str(exc)
-            return Response({'ok': False, 'detail': f"Telegram: {detail}"},
-                            status=status.HTTP_400_BAD_REQUEST)
-        except Exception as exc:
-            return Response({'ok': False, 'detail': f"Ulanib bo'lmadi: {exc.__class__.__name__}"},
-                            status=status.HTTP_502_BAD_GATEWAY)
+        ok, detail = proof_channel.send_text_verbose(chat_id, token, text)
         if not ok:
-            return Response({'ok': False, 'detail': "Telegram xabarni qabul qilmadi"},
+            return Response({'ok': False, 'detail': detail or "Telegram xabarni qabul qilmadi"},
                             status=status.HTTP_400_BAD_REQUEST)
         return Response({'ok': True, 'detail': 'Sinov xabari yuborildi'})
