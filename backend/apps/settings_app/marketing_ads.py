@@ -11,6 +11,7 @@ caption Telegram chegarasi (1024 belgi) ichida qoladi.
 import html
 import random
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from django.db.models import Count, Min, Q
 from django.utils import timezone
@@ -99,6 +100,28 @@ def _public_proof_channel() -> str:
     if enabled and chat.startswith('@') and len(chat) > 1:
         return chat[1:]
     return ''
+
+
+# Premium reklama rasmlari — frontend/public/ads/ (Vercel orqali ochiq URL)
+AD_IMAGE_FILES = ('ad-1.jpg', 'ad-2.jpg', 'ad-3.jpg')
+DEFAULT_SITE = 'https://donzo-eight.vercel.app'
+
+
+def _site_origin() -> str:
+    """Mini App sayti manzili (scheme://host). t.me havolasi bo'lsa — default sayt."""
+    parsed = urlparse(_setting('web_app_url'))
+    if parsed.scheme == 'https' and parsed.netloc and not parsed.netloc.endswith('t.me'):
+        return f'https://{parsed.netloc}'
+    return DEFAULT_SITE
+
+
+def pick_ad_image(rng=random) -> str:
+    """Admin o'z rasmini (marketing_daily_image) bergan bo'lsa — o'sha,
+    aks holda 3 ta premium rasmdan tasodifiy biri."""
+    custom = _setting('marketing_daily_image')
+    if custom:
+        return custom
+    return f'{_site_origin()}/ads/{rng.choice(AD_IMAGE_FILES)}'
 
 
 def build_reply_markup():

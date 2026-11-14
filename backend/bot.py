@@ -409,7 +409,8 @@ def _send_daily_marketing():
         image = (Setting.get_setting('marketing_daily_image', '') or '').strip()
         if not image:
             # DONZO professional reklama rasmi (PUBG/gaming tema, 1200x1200)
-            image = 'https://files.catbox.moe/wyrjmj.png'
+            from apps.settings_app.marketing_ads import pick_ad_image
+            image = pick_ad_image()
         if not image:
             try:
                 from apps.banners.models import Banner
@@ -509,8 +510,8 @@ def _send_creative_ad_to_groups():
         cid = str(g['chat_id'])
         # Premium post: haqiqiy narxlar, isbot va tugmalar bilan
         from apps.settings_app.marketing_ads import ad_payload, text_fallback
-        promo_image = ((Setting.get_setting('marketing_daily_image', '') or '').strip()
-                       or 'https://files.catbox.moe/wyrjmj.png')
+        from apps.settings_app.marketing_ads import pick_ad_image
+        promo_image = pick_ad_image()
         method, payload = ad_payload(cid, promo_image)
         res = _tg_api(token, method, payload)
         # Rasm yuklanmasa — xuddi shu post matn sifatida
@@ -1289,8 +1290,8 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         from apps.settings_app.models import MarketingGroupStat, Setting
-        promo_image = ((Setting.get_setting('marketing_daily_image', '') or '').strip()
-                       or 'https://files.catbox.moe/wyrjmj.png')
+        from apps.settings_app.marketing_ads import pick_ad_image
+        promo_image = pick_ad_image()
         skip = {
             str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
             str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),

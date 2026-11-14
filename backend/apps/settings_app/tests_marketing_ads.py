@@ -98,3 +98,27 @@ class PremiumAdTests(TestCase):
         self.assertEqual(fb['text'], payload['caption'])
         method, payload = marketing_ads.ad_payload('-100')
         self.assertEqual(method, 'sendMessage')
+
+
+class AdImageTests(TestCase):
+    def test_default_images_served_from_mini_app_site(self):
+        Setting.set_setting('marketing_daily_image', '')
+        Setting.set_setting('web_app_url', 'https://donzo-eight.vercel.app/some/path')
+        url = marketing_ads.pick_ad_image(random.Random(0))
+        self.assertRegex(url, r'^https://donzo-eight\.vercel\.app/ads/ad-[123]\.jpg$')
+
+    def test_tme_link_falls_back_to_default_site(self):
+        Setting.set_setting('marketing_daily_image', '')
+        Setting.set_setting('web_app_url', 'https://t.me/DONZOROBOT/app')
+        self.assertTrue(marketing_ads.pick_ad_image().startswith(marketing_ads.DEFAULT_SITE + '/ads/'))
+
+    def test_admin_custom_image_wins(self):
+        Setting.set_setting('marketing_daily_image', 'https://cdn.example.com/x.png')
+        self.assertEqual(marketing_ads.pick_ad_image(), 'https://cdn.example.com/x.png')
+
+    def test_all_images_exist_in_frontend(self):
+        from pathlib import Path
+        from django.conf import settings
+        public = Path(settings.BASE_DIR).parent / 'frontend' / 'public' / 'ads'
+        for name in marketing_ads.AD_IMAGE_FILES:
+            self.assertTrue((public / name).exists(), name)

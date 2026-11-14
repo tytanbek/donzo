@@ -54,3 +54,7 @@ backend/static/
 *.gif
 *.mp4
 *.webm
+
+# Reklama rasmlari (bot guruhlarga yuboradi) — repo'da saqlanadi
+!frontend/public/ads/
+!frontend/public/ads/*.jpg
