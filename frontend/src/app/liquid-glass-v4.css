@@ -1,0 +1,463 @@
+/* ═══════════════════════════════════════════════════════════════
+   LIQUID GLASS v4 — to'liq shaffof shisha + ko'zga ko'rinadigan harakat
+   ───────────────────────────────────────────────────────────────
+   globals.css va liquid-glass.css'dan KEYIN yuklanadi va barcha
+   umumiy yuzalarni bitta shisha "materiali"ga o'tkazadi:
+     • yorqin, shaffof to'ldirish (oq gradient, past opaklik)
+     • kuchli blur + saturate — ortidagi rangli fon "sinadi"
+     • tepada spekulyar yorug' chiziq, pastda ichki aks
+   Harakat: rangli fon dog'lari suzadi, kartalar ketma-ket ko'tariladi,
+   tugmalar ustidan nur o'tadi, emoji'lar suzadi, narxlar porlaydi.
+   Hamma animatsiya `prefers-reduced-motion`da o'chadi.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --lg4-fill: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.06) 42%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  --lg4-fill-strong: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.09) 45%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  --lg4-tint: rgba(12, 18, 36, 0.32);
+  --lg4-blur: blur(28px) saturate(185%) brightness(1.06);
+  --lg4-blur-strong: blur(40px) saturate(200%) brightness(1.08);
+  --lg4-border: rgba(255, 255, 255, 0.16);
+  --lg4-border-hover: rgba(255, 255, 255, 0.28);
+  --lg4-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 24px rgba(255, 255, 255, 0.04),
+    0 10px 34px rgba(0, 0, 0, 0.34);
+  --lg4-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 30px rgba(255, 255, 255, 0.07),
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(0, 245, 255, 0.12),
+    0 0 36px rgba(0, 245, 255, 0.12);
+  --lg4-sheen: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.5) 48%,
+    rgba(255, 255, 255, 0.12) 54%,
+    transparent 64%
+  );
+  --lg4-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --lg4-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ─── 1. Ambient fon: suzuvchi rangli dog'lar ───────────────────
+   Shisha faqat ortida rang bo'lsa "suyuq" ko'rinadi. Faqat
+   transform animatsiya qilinadi — GPU'da, 60fps. */
+.lg4-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lg4-ambient span {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.lg4-ambient span:nth-child(1) {
+  top: -30vmax;
+  left: -20vmax;
+  background: radial-gradient(circle, rgba(0, 229, 255, 0.55) 0%, rgba(0, 229, 255, 0) 62%);
+  animation: lg4-drift-a 26s ease-in-out infinite alternate;
+}
+
+.lg4-ambient span:nth-child(2) {
+  top: 10vh;
+  right: -35vmax;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.55) 0%, rgba(168, 85, 247, 0) 62%);
+  animation: lg4-drift-b 32s ease-in-out infinite alternate;
+}
+
+.lg4-ambient span:nth-child(3) {
+  bottom: -35vmax;
+  left: 5vw;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.42) 0%, rgba(236, 72, 153, 0) 62%);
+  animation: lg4-drift-c 29s ease-in-out infinite alternate;
+}
+
+.lg4-ambient span:nth-child(4) {
+  top: 40vh;
+  left: 30vw;
+  width: 45vmax;
+  height: 45vmax;
+  background: radial-gradient(circle, rgba(255, 196, 0, 0.28) 0%, rgba(255, 196, 0, 0) 62%);
+  animation: lg4-drift-d 23s ease-in-out infinite alternate;
+}
+
+@keyframes lg4-drift-a {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(18vw, 14vh, 0) scale(1.18); }
+  100% { transform: translate3d(6vw, 30vh, 0) scale(0.95); }
+}
+
+@keyframes lg4-drift-b {
+  0% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-22vw, 18vh, 0) scale(0.9); }
+  100% { transform: translate3d(-8vw, -10vh, 0) scale(1.15); }
+}
+
+@keyframes lg4-drift-c {
+  0% { transform: translate3d(0, 0, 0) scale(0.95); }
+  50% { transform: translate3d(25vw, -16vh, 0) scale(1.12); }
+  100% { transform: translate3d(-10vw, -6vh, 0) scale(1); }
+}
+
+@keyframes lg4-drift-d {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-20vw, -22vh, 0) scale(1.3); }
+  100% { transform: translate3d(14vw, 8vh, 0) scale(0.85); }
+}
+
+/* Eski statik fon qatlamini o'chiramiz — endi ambient dog'lar bor */
+body.cyber-grid {
+  background-color: #04070f;
+  background-image: none;
+}
+body.cyber-grid::before {
+  display: none;
+}
+
+/* Mini App ramkasi shaffof — aks holda ambient fon ko'rinmaydi */
+html body .mini-app-frame {
+  background: transparent !important;
+}
+
+/* ─── 2. Shisha materiali — barcha umumiy yuzalar ─────────────── */
+html body .glass-card,
+html body .game-card,
+html body .mini-card,
+html body .mini-panel,
+html body .mini-order-card,
+html body .mini-balance-hero,
+html body .premium-stat,
+html body .premium-empty,
+html body .glass-deep,
+html body .lg-glass,
+html body .lg-capsule,
+html body .service-float-bar,
+html body .balance-badge {
+  background: var(--lg4-fill), var(--lg4-tint);
+  backdrop-filter: var(--lg4-blur);
+  -webkit-backdrop-filter: var(--lg4-blur);
+  border: 1px solid var(--lg4-border);
+  box-shadow: var(--lg4-shadow);
+  transition:
+    transform 0.45s var(--lg4-spring),
+    box-shadow 0.4s var(--lg4-ease),
+    border-color 0.4s var(--lg4-ease),
+    background 0.4s var(--lg4-ease);
+}
+
+/* Header va pastki menyu — kuchliroq material */
+html body .mini-header {
+  background: var(--lg4-fill), rgba(6, 10, 22, 0.38) !important;
+  backdrop-filter: var(--lg4-blur-strong) !important;
+  -webkit-backdrop-filter: var(--lg4-blur-strong) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 30px rgba(0, 0, 0, 0.32) !important;
+}
+
+html body .bottom-nav-shell {
+  background: var(--lg4-fill-strong), rgba(8, 12, 26, 0.4);
+  backdrop-filter: var(--lg4-blur-strong);
+  -webkit-backdrop-filter: var(--lg4-blur-strong);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+html body .bottom-nav-indicator {
+  background: linear-gradient(120deg, rgba(0, 245, 255, 0.35), rgba(168, 85, 247, 0.35), rgba(0, 245, 255, 0.35));
+  background-size: 200% 100%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 22px rgba(0, 245, 255, 0.35);
+  animation: lg4-flow 4s linear infinite;
+}
+
+/* Hover (faqat sichqoncha) — ko'tarilish + yorug'lik */
+@media (hover: hover) and (pointer: fine) {
+  html body .glass-card:hover,
+  html body .game-card:hover,
+  html body .mini-card:hover,
+  html body .mini-order-card:hover,
+  html body .premium-stat:hover,
+  html body .lg-glass:hover {
+    transform: translateY(-6px) scale(1.015);
+    border-color: var(--lg4-border-hover);
+    box-shadow: var(--lg4-shadow-hover);
+  }
+}
+
+/* ─── 3. Kiritish maydonlari, chiplar, pill tugmalar ───────────── */
+html body .glass-input,
+html body .lg-input {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)), rgba(8, 12, 26, 0.35);
+  backdrop-filter: var(--lg4-blur);
+  -webkit-backdrop-filter: var(--lg4-blur);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: border-color 0.3s var(--lg4-ease), box-shadow 0.3s var(--lg4-ease);
+}
+
+html body .glass-input:focus,
+html body .lg-input:focus {
+  border-color: rgba(0, 245, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 4px rgba(0, 245, 255, 0.14),
+    0 0 26px rgba(0, 245, 255, 0.22);
+}
+
+html body .amount-chip,
+html body .chip,
+html body .pill-btn,
+html body .pill-btn-ghost,
+html body .order-tab,
+html body .balance-step,
+html body .glow-btn-outline,
+html body .lg-btn-soft {
+  background: var(--lg4-fill), rgba(10, 14, 30, 0.28);
+  backdrop-filter: var(--lg4-blur);
+  -webkit-backdrop-filter: var(--lg4-blur);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 14px rgba(0, 0, 0, 0.22);
+  transition:
+    transform 0.35s var(--lg4-spring),
+    box-shadow 0.3s var(--lg4-ease),
+    border-color 0.3s var(--lg4-ease),
+    background 0.3s var(--lg4-ease);
+}
+
+html body .amount-chip.active,
+html body .chip.active,
+html body .order-tab.active {
+  background:
+    linear-gradient(135deg, rgba(0, 245, 255, 0.32), rgba(168, 85, 247, 0.32)),
+    rgba(10, 14, 30, 0.3);
+  border-color: rgba(255, 255, 255, 0.4);
+  animation: lg4-selected-glow 2.4s ease-in-out infinite;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html body .amount-chip:hover,
+  html body .chip:hover,
+  html body .pill-btn:hover,
+  html body .balance-step:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 255, 255, 0.32);
+  }
+}
+
+/* ─── 4. Asosiy tugmalar — shisha + doimiy nur o'tishi ────────────
+   Nur background'ning birinchi qatlami — pseudo-elementlarga tegmaydi. */
+html body .glow-btn,
+html body .lg-btn,
+html body .service-float-btn {
+  background-image:
+    var(--lg4-sheen),
+    linear-gradient(135deg, rgba(0, 245, 255, 0.92), rgba(168, 85, 247, 0.92), rgba(0, 245, 255, 0.92));
+  background-size: 260% 100%, 200% 200%;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.15),
+    0 8px 28px rgba(0, 245, 255, 0.32),
+    0 0 44px rgba(168, 85, 247, 0.22);
+  animation: lg4-btn-sheen 4.2s var(--lg4-ease) infinite;
+}
+
+/* ─── 5. Kirish animatsiyasi — kartalar ketma-ket ko'tariladi ──────
+   `translate`/`opacity`/`filter` ishlatiladi (transform emas), fill
+   `backwards` — tugagach hover/press transformlariga xalaqit bermaydi. */
+.mini-card,
+.game-card,
+.mini-order-card,
+.premium-stat,
+.amount-chip {
+  animation: lg4-rise 0.7s var(--lg4-ease) backwards;
+}
+
+/* Katta panellar: blur'siz, yengil kirish (blur katta yuzada og'ir) */
+.mini-panel,
+.glass-card {
+  animation: lg4-rise-soft 0.55s var(--lg4-ease) backwards;
+}
+
+.mini-card:nth-child(1), .game-card:nth-child(1), .mini-order-card:nth-child(1), .premium-stat:nth-child(1), .amount-chip:nth-child(1) { animation-delay: 0.04s; }
+.mini-card:nth-child(2), .game-card:nth-child(2), .mini-order-card:nth-child(2), .premium-stat:nth-child(2), .amount-chip:nth-child(2) { animation-delay: 0.1s; }
+.mini-card:nth-child(3), .game-card:nth-child(3), .mini-order-card:nth-child(3), .premium-stat:nth-child(3), .amount-chip:nth-child(3) { animation-delay: 0.16s; }
+.mini-card:nth-child(4), .game-card:nth-child(4), .mini-order-card:nth-child(4), .premium-stat:nth-child(4), .amount-chip:nth-child(4) { animation-delay: 0.22s; }
+.mini-card:nth-child(5), .game-card:nth-child(5), .mini-order-card:nth-child(5), .premium-stat:nth-child(5), .amount-chip:nth-child(5) { animation-delay: 0.28s; }
+.mini-card:nth-child(6), .game-card:nth-child(6), .mini-order-card:nth-child(6), .premium-stat:nth-child(6), .amount-chip:nth-child(6) { animation-delay: 0.34s; }
+.mini-card:nth-child(7), .game-card:nth-child(7), .mini-order-card:nth-child(7), .amount-chip:nth-child(7) { animation-delay: 0.4s; }
+.mini-card:nth-child(8), .game-card:nth-child(8), .mini-order-card:nth-child(8), .amount-chip:nth-child(8) { animation-delay: 0.46s; }
+.mini-card:nth-child(n+9), .game-card:nth-child(n+9), .mini-order-card:nth-child(n+9), .amount-chip:nth-child(n+9) { animation-delay: 0.52s; }
+
+/* Tanlangan chip: kirish + porlash birga */
+html body .amount-chip.active {
+  animation:
+    lg4-rise 0.7s var(--lg4-ease) backwards,
+    lg4-selected-glow 2.4s ease-in-out infinite;
+}
+
+/* ─── 6. Doimiy "tirik" detallar ─────────────────────────────── */
+.mini-card-emoji,
+.service-hero-logo,
+.premium-empty-icon,
+.mini-logo-icon {
+  animation: lg4-float 4.2s ease-in-out infinite;
+}
+
+.mini-card:nth-child(even) .mini-card-emoji { animation-delay: -2.1s; }
+
+.mini-card-price,
+.neon-price,
+.service-float-price,
+.mini-balance-value {
+  animation: lg4-price-glow 3s ease-in-out infinite;
+}
+
+.game-badge-hot,
+.mini-card-ribbon,
+.mini-card-badge {
+  animation: lg4-badge-pulse 2.2s ease-in-out infinite;
+}
+
+.mini-card-online {
+  animation: lg4-online 1.6s ease-in-out infinite;
+}
+
+.mini-success-icon {
+  animation: lg4-pop 0.8s var(--lg4-spring) both, lg4-float 4.2s ease-in-out 0.8s infinite;
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────── */
+@keyframes lg4-rise {
+  0% {
+    opacity: 0;
+    translate: 0 26px;
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    translate: 0 0;
+    filter: blur(0);
+  }
+}
+
+@keyframes lg4-rise-soft {
+  0% { opacity: 0; translate: 0 16px; }
+  100% { opacity: 1; translate: 0 0; }
+}
+
+@keyframes lg4-btn-sheen {
+  0% { background-position: 130% 0, 0% 50%; }
+  60% { background-position: -30% 0, 100% 50%; }
+  100% { background-position: -30% 0, 0% 50%; }
+}
+
+@keyframes lg4-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes lg4-float {
+  0%, 100% { translate: 0 0; rotate: 0deg; }
+  50% { translate: 0 -6px; rotate: -3deg; }
+}
+
+@keyframes lg4-price-glow {
+  0%, 100% { text-shadow: 0 0 6px rgba(0, 245, 255, 0.25); }
+  50% { text-shadow: 0 0 16px rgba(0, 245, 255, 0.7), 0 0 28px rgba(168, 85, 247, 0.35); }
+}
+
+@keyframes lg4-badge-pulse {
+  0%, 100% { scale: 1; filter: brightness(1); }
+  50% { scale: 1.08; filter: brightness(1.25); }
+}
+
+@keyframes lg4-online {
+  0%, 100% { opacity: 1; scale: 1; }
+  50% { opacity: 0.45; scale: 0.8; }
+}
+
+@keyframes lg4-pop {
+  0% { scale: 0.3; opacity: 0; }
+  100% { scale: 1; opacity: 1; }
+}
+
+@keyframes lg4-selected-glow {
+  0%, 100% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 14px rgba(0, 245, 255, 0.25);
+  }
+  50% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 30px rgba(168, 85, 247, 0.45);
+  }
+}
+
+/* ─── Kichik ekranlar: blur'ni yengillashtiramiz ─────────────────── */
+@media (max-width: 380px) {
+  :root {
+    --lg4-blur: blur(20px) saturate(170%);
+    --lg4-blur-strong: blur(28px) saturate(180%);
+  }
+}
+
+/* ─── Harakatni kamaytirish so'ralgan bo'lsa — hammasi jim ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .lg4-ambient span,
+  .mini-card,
+  .game-card,
+  .mini-order-card,
+  .premium-stat,
+  .amount-chip,
+  html body .amount-chip.active,
+  .mini-panel,
+  .glass-card,
+  .mini-card-emoji,
+  .service-hero-logo,
+  .mini-success-icon,
+  .premium-empty-icon,
+  .mini-logo-icon,
+  .mini-card-price,
+  .neon-price,
+  .service-float-price,
+  .mini-balance-value,
+  .game-badge-hot,
+  .mini-card-ribbon,
+  .mini-card-badge,
+  .mini-card-online,
+  html body .bottom-nav-indicator,
+  html body .chip.active,
+  html body .order-tab.active,
+  html body .glow-btn,
+  html body .lg-btn,
+  html body .service-float-btn {
+    animation: none !important;
+  }
+}

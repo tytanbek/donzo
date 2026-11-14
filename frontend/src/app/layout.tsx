@@ -16,11 +16,35 @@ import IosMotion from '@/components/IosMotion';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import './liquid-glass.css';
+import './liquid-glass-v4.css';
 
 // Routes that keep the classic desktop shell (staff panels only)
 const CLASSIC_SHELL_PREFIXES = ['/admin', '/operator', '/support'];
 
 const STAFF_ROLES = ['super_admin', 'admin', 'senior_operator', 'operator', 'support'];
+
+// Liquid glass toast — shaffof shisha, ortidagi fon ko'rinadi
+const GLASS_TOAST_STYLE: React.CSSProperties = {
+  background: 'linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05)), rgba(10,14,30,0.55)',
+  backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+  color: '#F8FAFC',
+  border: '1px solid rgba(255,255,255,0.18)',
+  borderRadius: '18px',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 12px 32px rgba(0,0,0,0.4)',
+};
+
+/** Liquid glass ortidagi suzuvchi rangli dog'lar */
+function AmbientGlow() {
+  return (
+    <div className="lg4-ambient" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
 
 function Particles() {
   useEffect(() => {
@@ -181,7 +205,7 @@ export default function RootLayout({
 
   if (!authChecked) {
       return (
-        <html lang="uz">
+        <html lang="uz" suppressHydrationWarning>
           <head>
             {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
             <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -223,7 +247,8 @@ export default function RootLayout({
   // Token yo'q — butun ilova login ekranini ko'rsatadi
   if (!isAuthenticated || !user) {
     return (
-      <html lang="uz">          <head>
+      <html lang="uz" suppressHydrationWarning>
+          <head>
             {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
             <script src="https://telegram.org/js/telegram-web-app.js"></script>
             <script dangerouslySetInnerHTML={{ __html: `
@@ -249,6 +274,7 @@ export default function RootLayout({
         </head>
         <body className="cyber-grid min-h-screen">
           {/* iOS 26 liquid-glass harakat dvigateli (linza, press, glint) */}
+          <AmbientGlow />
           <IosMotion />
           <FragmentLogin />
         </body>
@@ -257,7 +283,7 @@ export default function RootLayout({
   }
 
   return (
-    <html lang="uz">
+    <html lang="uz" suppressHydrationWarning>
       <head>
         {/* Telegram WebApp SDK — FULLSCREEN + UI config */}
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -285,6 +311,7 @@ export default function RootLayout({
       <body className="cyber-grid min-h-screen">
         <Particles />
         {/* iOS 26 liquid-glass harakat dvigateli — butun ilova uchun bir marta */}
+        <AmbientGlow />
         <IosMotion />
         {isClassicShell ? (
           <div className="relative z-10 flex flex-col min-h-screen">
@@ -293,21 +320,18 @@ export default function RootLayout({
               <Toaster
                 position="top-right"
                 toastOptions={{
-                  style: {
-                    background: '#111827',
-                    color: '#F8FAFC',
-                    border: '1px solid rgba(0, 245, 255, 0.1)',
-                    borderRadius: '12px',
-                  },
+                  style: GLASS_TOAST_STYLE,
                 }}
               />
               {/* Lightweight fade-in only — no exit-wait so navigation is instant */}
               <motion.div
                 key={pathname}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 22, scale: 0.985, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
                 transition={{
-                  opacity: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
+                  opacity: { duration: 0.32, ease: [0.32, 0.72, 0, 1] },
+                  filter: { duration: 0.35 },
+                  scale: { type: 'spring', stiffness: 300, damping: 28 },
                   y: { type: 'spring', stiffness: 380, damping: 32, mass: 0.7 },
                 }}
               >
@@ -324,12 +348,7 @@ export default function RootLayout({
             <Toaster
               position="top-center"
               toastOptions={{
-                style: {
-                  background: '#0F172A',
-                  color: '#F8FAFC',
-                  border: '1px solid rgba(0, 245, 255, 0.15)',
-                  borderRadius: '12px',
-                },
+                style: GLASS_TOAST_STYLE,
               }}
             />
             {/* MiniAppShell stays MOUNTED across navigations (no keyed remount),
