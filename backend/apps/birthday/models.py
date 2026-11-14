@@ -24,7 +24,10 @@ class BirthdayReward(models.Model):
     birthday_date = models.DateField(help_text='Tugilgan kun sanasi (yilsiz)')
     year = models.PositiveIntegerField(help_text='Chegirma yaratilgan yil')
     discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=10)
-    coupon_code = models.CharField(max_length=20, unique=True, db_index=True)
+    coupon_code = models.CharField(
+        max_length=20, unique=True, db_index=True,
+        help_text='Unique coupon code: BD-<random>',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     issued_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(help_text='24 soat')

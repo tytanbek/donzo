@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiSearch, FiUsers, FiMail, FiUser } from 'react-icons/fi';
 import { PageSkeleton } from '@/components/Skeleton';
+import { apiUrl } from '@/lib/api';
 
 export default function SupportCustomers() {
   const [users, setUsers] = useState<any[]>([]);
@@ -14,7 +15,7 @@ export default function SupportCustomers() {
     const fetchUsers = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/admin/users/`,
+          apiUrl(`/admin/users/`),
           { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
         );
         if (res.ok) {

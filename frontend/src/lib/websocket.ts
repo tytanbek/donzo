@@ -4,7 +4,13 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useStore } from './store';
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+// NEXT_PUBLIC_WS_URL berilmasa — API manzilidan hosil qilinadi
+// (https://host/api/v1 → wss://host/ws). Production'da localhost'ga ulanmaslik uchun.
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_URL ||
+  (process.env.NEXT_PUBLIC_API_URL || 'https://donzo-backend-v8oz.onrender.com/api/v1')
+    .replace(/^http/, 'ws')
+    .replace(/\/api\/v1\/?$/, '/ws');
 
 type WSEventHandler = (data: any) => void;
 

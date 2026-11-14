@@ -6,7 +6,7 @@ import { FiShoppingBag, FiClock, FiCheckCircle, FiTrendingUp, FiPackage, FiEye, 
 import { PageSkeleton } from '@/components/Skeleton';
 import OrderDetailModal from '@/components/OrderDetailModal';
 import toast from 'react-hot-toast';
-import { adminAPI } from '@/lib/api';
+import { adminAPI, apiUrl } from '@/lib/api';
 import { useStore } from '@/lib/store';
 
 const statusColors: Record<string, string> = {
@@ -34,7 +34,7 @@ export default function OperatorDashboard() {
     const fetchDashboard = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/admin/operator/dashboard/`,
+          apiUrl(`/admin/operator/dashboard/`),
           { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
         );
         const data = await res.json();
@@ -62,7 +62,7 @@ export default function OperatorDashboard() {
     const fetchStats = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/admin/operator/stats/`,
+          apiUrl(`/admin/operator/stats/`),
           { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
         );
         if (res.ok) {

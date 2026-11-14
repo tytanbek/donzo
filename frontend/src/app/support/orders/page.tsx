@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiSearch, FiEye, FiShoppingBag } from 'react-icons/fi';
 import { PageSkeleton } from '@/components/Skeleton';
+import { apiUrl } from '@/lib/api';
 import OrderDetailModal from '@/components/OrderDetailModal';
 import { useStore } from '@/lib/store';
 
@@ -33,7 +34,7 @@ export default function SupportOrders() {
     const fetchOrders = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/orders/`,
+          apiUrl(`/orders/`),
           { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
         );
         if (res.ok) {

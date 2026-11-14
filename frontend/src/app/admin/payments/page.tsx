@@ -3,11 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiSearch, FiDollarSign, FiCheckCircle, FiXCircle, FiClock, FiExternalLink, FiRefreshCw } from 'react-icons/fi';
-import { adminAPI, balanceAPI } from '@/lib/api';
+import { adminAPI, apiUrl, balanceAPI } from '@/lib/api';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 const providerColors: Record<string, string> = {
   balance: 'bg-green-500/10 text-green-400 border-green-500/20',
@@ -63,7 +61,7 @@ export default function AdminPaymentsPage() {
       if (statusFilter !== 'all') params.status = statusFilter;
       if (providerFilter !== 'all') params.provider = providerFilter;
       if (search) params.search = search;
-      const res = await axios.get(`${API_BASE}/admin/payments/`, {
+      const res = await axios.get(apiUrl(`/admin/payments/`), {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
         params,
       });

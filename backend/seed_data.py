@@ -100,9 +100,11 @@ create_service('pubg-mobile', {
 }, [
     {'field_name': 'game_id', 'field_label': 'Game ID', 'field_type': 'number', 'is_required': True, 'order_index': 1},
 ], [
-    ('60 UC', 'Unknown Cash 60', 12000, 0), ('300 UC', 'Unknown Cash 300', 59000, 1),
-    ('600 UC', 'Unknown Cash 600', 115000, 2), ('1500 UC', 'Unknown Cash 1500', 285000, 3),
-    ('3000 UC', 'Unknown Cash 3000', 569000, 4), ('Royale Pass', 'Royale Pass', 150000, 5),
+    # Narx = tannarx + 2%, mingtalikka yaxlitlangan (2026-11)
+    ('60 UC', 'Unknown Cash 60', 11000, 0), ('325 UC', 'Unknown Cash 325', 55000, 1),
+    ('660 UC', 'Unknown Cash 660', 110000, 2), ('1800 UC', 'Unknown Cash 1800', 274000, 3),
+    ('3850 UC', 'Unknown Cash 3850', 548000, 4), ('8100 UC', 'Unknown Cash 8100', 1095000, 5),
+    ('16200 UC', 'Unknown Cash 16200', 2190000, 6), ('Royale Pass', 'Royale Pass', 150000, 7),
 ])
 
 # 3. Free Fire

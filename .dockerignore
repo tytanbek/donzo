@@ -21,3 +21,12 @@ cloudflared.exe
 ngrok.exe
 *.sqlite3-wal
 *.sqlite3-shm
+# Maxfiy/lokal fayllar — hech qachon image'ga tushmasin
+backend/sessions/
+*.session
+*.session-journal
+backend/_archive/
+backend/render-service-id.txt
+render-env-to-paste.txt
+*.ps1
+*.exe

@@ -3,11 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiPercent, FiDollarSign, FiCalendar, FiCheck, FiCopy, FiSearch, FiTag } from 'react-icons/fi';
-import { adminAPI } from '@/lib/api';
+import { adminAPI, apiUrl } from '@/lib/api';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export default function AdminPromoCodesPage() {
   const [promocodes, setPromocodes] = useState<any[]>([]);
@@ -37,7 +35,7 @@ export default function AdminPromoCodesPage() {
       const params: any = {};
       if (search) params.search = search;
       if (filterActive !== 'all') params.is_active = filterActive === 'active';
-      const res = await axios.get(`${API_BASE}/admin/promocodes/`, {
+      const res = await axios.get(apiUrl(`/admin/promocodes/`), {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
         params,
       });
@@ -106,10 +104,10 @@ export default function AdminPromoCodesPage() {
     try {
       const headers = { Authorization: `Bearer ${localStorage.getItem('access_token')}` };
       if (editing) {
-        await axios.put(`${API_BASE}/admin/promocodes/${editing.id}/`, data, { headers });
+        await axios.put(apiUrl(`/admin/promocodes/${editing.id}/`), data, { headers });
         toast.success('Promo kod yangilandi');
       } else {
-        await axios.post(`${API_BASE}/admin/promocodes/`, data, { headers });
+        await axios.post(apiUrl(`/admin/promocodes/`), data, { headers });
         toast.success('Promo kod yaratildi');
       }
       fetchCodes();
@@ -121,7 +119,7 @@ export default function AdminPromoCodesPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Promo kodni o'chirishni tasdiqlaysizmi?")) return;
     try {
-      await axios.delete(`${API_BASE}/admin/promocodes/${id}/`, {
+      await axios.delete(apiUrl(`/admin/promocodes/${id}/`), {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
       });
       toast.success("Promo kod o'chirildi");
