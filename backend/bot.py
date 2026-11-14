@@ -461,6 +461,58 @@ def _send_daily_marketing():
         print(f"[MARKETING] Kunlik reklama xatosi: {type(exc).__name__}", flush=True)
 
 
+def _send_requested_broadcast():
+    """Bir martalik "hozir hamma guruhlarga reklama" so'rovini bajaradi.
+
+    So'rov `marketing_broadcast_request` sozlamasiga (masalan, data migratsiya
+    yoki admin tomonidan) yoziladi. Bot uni `marketing_broadcast_done` bilan
+    solishtiradi: farq bo'lsa — AVVAL done'ni yozadi (restart/qayta ishga
+    tushishda ikki marta yuborilmasin — ko'pi bilan bir marta), keyin premium
+    postni barcha marketing guruhlariga yuboradi. /reklama bilan bir xil:
+    kunlik limitga qaramaydi, lekin yuborilganlar limitga qo'shiladi.
+    Natija `marketing_broadcast_result`ga yoziladi. Hech qachon xato otmaydi.
+    """
+    try:
+        from apps.settings_app.models import MarketingGroupStat, Setting
+        from apps.settings_app.marketing_ads import ad_payload, pick_ad_image, text_fallback
+
+        request_id = (Setting.get_setting('marketing_broadcast_request', '') or '').strip()
+        if not request_id or request_id == (Setting.get_setting('marketing_broadcast_done', '') or '').strip():
+            return
+        token = Setting.get_setting('telegram_bot_token', '') or ''
+        if not token:
+            return
+        Setting.set_setting('marketing_broadcast_done', request_id)
+
+        skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+                str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
+                str((Setting.get_setting('proof_channel_id', '') or '').strip())}
+        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
+        sent = failed = 0
+        for g in groups:
+            cid = str(g['chat_id'] or '')
+            if not cid or cid in skip:
+                continue
+            try:
+                method, payload = ad_payload(cid, pick_ad_image())
+                res = _tg_api(token, method, payload)
+                if not (res and res.get('ok')) and method == 'sendPhoto':
+                    res = _tg_api(token, 'sendMessage', text_fallback(payload))
+                if res and res.get('ok'):
+                    MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+                    sent += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+            time.sleep(1)  # Telegram rate limit
+        summary = f"{request_id}: {sent} ta guruhga yuborildi, {failed} ta xato ({_tashkent_now():%Y-%m-%d %H:%M})"
+        Setting.set_setting('marketing_broadcast_result', summary)
+        print(f"[MARKETING] Bir martalik reklama — {summary}", flush=True)
+    except Exception as exc:
+        print(f"[MARKETING] Bir martalik reklama xatosi: {type(exc).__name__}", flush=True)
+
+
 def _daily_marketing_loop():
     """Har daqiqada tekshiradi: ertalab (marketing_daily_time) guruhlarga reklama.
 
@@ -469,6 +521,10 @@ def _daily_marketing_loop():
     """
     time.sleep(120)  # bot ishga tushishini kutamiz (DB tayyor bo'lsin)
     while True:
+        try:
+            _send_requested_broadcast()
+        except Exception:
+            pass
         try:
             _send_daily_marketing()
         except Exception:
