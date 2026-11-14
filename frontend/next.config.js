@@ -33,4 +33,16 @@ const nextConfig = {
   },
 };
 
+// Vercel'dagi NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WS_URL env'lari o'chgan eski
+// backend'ga (masalan donzo-backend-lzmd) ishora qilib qolishi mumkin — u 404
+// qaytaradi va Telegram avto-kirish ishlamay qoladi. Shuning uchun Vercel
+// build'larida manzillar BACKEND_ORIGIN'dan majburan olinadi.
+if (process.env.VERCEL) {
+  const wsOrigin = BACKEND_ORIGIN.replace(/^http/, 'ws');
+  nextConfig.env = {
+    NEXT_PUBLIC_API_URL: `${BACKEND_ORIGIN}/api/v1`,
+    NEXT_PUBLIC_WS_URL: `${wsOrigin}/ws`,
+  };
+}
+
 module.exports = nextConfig;
