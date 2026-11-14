@@ -422,17 +422,6 @@ def _send_daily_marketing():
             bot_username = (Setting.get_setting('telegram_bot_username', 'DONZOROBOT') or 'DONZOROBOT').strip().lstrip('@')
         except Exception:
             bot_username = 'DONZOROBOT'
-        # Creative reklama — sirli shaxs uslubida, sotib olishga da'vat bilan
-        creative_ads = [
-            "🎭 DONZO — sirli va mehribon platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon yordamingizda turaman.",
-            "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
-            "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
-            "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
-            "🔥 DONZO — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
-            "💎 Premium kerakmi? DONZO'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
-        ]
-        caption = random.choice(creative_ads)
-
         # Guruhlar: bot marketing qilgan barcha guruhlar (operatsionlardan tashqari)
         skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
                 str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip())}
@@ -450,17 +439,13 @@ def _send_daily_marketing():
                 limited += 1
                 continue
             try:
-                payload = {'chat_id': cid, 'caption': caption,
-                           'disable_web_page_preview': True}
-                ok = False
-                if image:
-                    payload['photo'] = image
-                    res = _tg_api(token, 'sendPhoto', payload)
-                    ok = bool(res and res.get('ok'))
-                if not ok:
-                    payload.pop('photo', None)
-                    payload['text'] = payload.pop('caption')
-                    res = _tg_api(token, 'sendMessage', payload)
+                # Premium post: haqiqiy narxlar, isbot va tugmalar bilan
+                from apps.settings_app.marketing_ads import ad_payload, text_fallback
+                method, payload = ad_payload(cid, image)
+                res = _tg_api(token, method, payload)
+                ok = bool(res and res.get('ok'))
+                if not ok and method == 'sendPhoto':
+                    res = _tg_api(token, 'sendMessage', text_fallback(payload))
                     ok = bool(res and res.get('ok'))
                 if ok:
                     MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
@@ -522,34 +507,15 @@ def _send_creative_ad_to_groups():
         if g is None:
             return  # bugun hamma guruhda reklama limiti tugagan
         cid = str(g['chat_id'])
-        creative_msgs = [
-            "🎭 DONZO — sirli va mehribon platforma. Siz o'yinlarda yengilmoqchi bo'lganingizda, men allaqachon yordamingizda turaman. donzoda tekshirib ko'ring.",
-            "🌙 DONZO tuni bilan ishlaydi. 1 daqiqada donat, 1 daqiqada g'alaba. donzoda ol — o'yin o'zgarsin.",
-            "⚡ DONZO'da PUBG UC, Free Fire, Telegram Premium — hammasi bor. Arzonroq, tezroq, ishonchliroq.",
-            "🎮 O'yinda yengilmoqchimisan? DONZO'dan diamant/UC olishning sirini bilasanmi? donzoda tekshir.",
-            "🔥 DONZO — sotib olishni oson qiladi. 1 daqiqada to'lov, 1 daqiqada donat. Boshqa joyda kunlab kutasan.",
-            "💎 Premium kerakmi? DONZO'da arzon va tez. Telegram Premium, Steam, Netflix — hammasi bir yerda.",
-            "🏆 DONZO bilan g'alaba qozon. O'yin rebeting oshadi, donating arzonlashadi. Sinab ko'r — afsus qilmaysan.",
-            "🎯 DONZO — maqsadga yo'naltirilgan platforma. Narxlar ham, tezlik ham, sifat ham — hammasi o'z joyida.",
-            "🚀 DONZO'da yangilik bor — endi hamma o'yin uchun donat qilish mumkin. Boshqa joyda topa olmaysan.",
-            "❄️ DONZO — sovuq hisob-kitob, lekin iliq xizmat. Arzon narx, tez yetkazish, 24/7 qo'llab-quvvatlash.",
-        ]
-        msg = random.choice(creative_msgs)
-        # DONZO professional reklama rasmi bilan yuboramiz
-        promo_image = 'https://files.catbox.moe/wyrjmj.png'
-        res = _tg_api(token, 'sendPhoto', {
-            'chat_id': cid,
-            'photo': promo_image,
-            'caption': msg,
-            'disable_web_page_preview': True,
-        })
-        # Rasm yuklanmasa — matnli xabar sifatida yuboramiz
-        if not (res and res.get('ok')):
-            res = _tg_api(token, 'sendMessage', {
-                'chat_id': cid,
-                'text': msg,
-                'disable_web_page_preview': True,
-            })
+        # Premium post: haqiqiy narxlar, isbot va tugmalar bilan
+        from apps.settings_app.marketing_ads import ad_payload, text_fallback
+        promo_image = ((Setting.get_setting('marketing_daily_image', '') or '').strip()
+                       or 'https://files.catbox.moe/wyrjmj.png')
+        method, payload = ad_payload(cid, promo_image)
+        res = _tg_api(token, method, payload)
+        # Rasm yuklanmasa — xuddi shu post matn sifatida
+        if not (res and res.get('ok')) and method == 'sendPhoto':
+            res = _tg_api(token, 'sendMessage', text_fallback(payload))
         if res and res.get('ok'):
             MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
             print(f"[MARKETING] Creative reklama: {cid} ({g.get('chat_title', '')})", flush=True)
@@ -1321,18 +1287,10 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Barcha guruhlarga professional DONZO reklamasi yuborilmoqda."
     )
 
-    promo_image = 'https://files.catbox.moe/wyrjmj.png'
-    caption = (
-        '🎭 <b>DONZO</b> — sirli va mehribon platforma.\n\n'
-        'Sevimli o\'yinglaringiz uchun <b>TEZ, XAVFSIZ VA QULAY</b> top-up xizmati!\n\n'
-        '⚡ <b>PUBG Mobile</b> • <b>Mobile Legends</b> • <b>Free Fire</b>\n'
-        '💣 <b>Call of Duty</b> • <b>Genshin Impact</b> • <b>Valorant</b>\n\n'
-        '🎮 O\'yin zavqi endi yanada yaqin!\n'
-        '🔗 <a href="https://t.me/DONZOROBOT">@DONZOROBOT</a> orqali hoziroq boshlang!'
-    )
-
     try:
         from apps.settings_app.models import MarketingGroupStat, Setting
+        promo_image = ((Setting.get_setting('marketing_daily_image', '') or '').strip()
+                       or 'https://files.catbox.moe/wyrjmj.png')
         skip = {
             str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
             str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
@@ -1362,15 +1320,11 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             token = Setting.get_setting('telegram_bot_token', '') or ''
             if not token:
                 continue
-            payload = _json.dumps({
-                'chat_id': cid,
-                'photo': promo_image,
-                'caption': caption,
-                'parse_mode': 'HTML',
-                'disable_web_page_preview': True,
-            }).encode()
+            from apps.settings_app.marketing_ads import ad_payload
+            method, body = ad_payload(cid, promo_image)
+            payload = _json.dumps(body).encode()
             req = _ur.Request(
-                f'https://api.telegram.org/bot{token}/sendPhoto',
+                f'https://api.telegram.org/bot{token}/{method}',
                 data=payload,
                 headers={'Content-Type': 'application/json'},
             )
