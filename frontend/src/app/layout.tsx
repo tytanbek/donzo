@@ -17,6 +17,7 @@ import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import './liquid-glass.css';
 import './liquid-glass-v4.css';
+import SeoTags from '@/components/SeoTags';
 
 // Routes that keep the classic desktop shell (staff panels only)
 const CLASSIC_SHELL_PREFIXES = ['/admin', '/operator', '/support'];
@@ -224,8 +225,7 @@ export default function RootLayout({
               });
             ` }} />
             <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-            <title>DONZO - LEVEL UP YOUR GAME</title>
-            <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
+            <SeoTags />
             <link rel="icon" href="/images/donzo.png" type="image/png" />
             <link rel="apple-touch-icon" href="/images/donzo.png" />
             <meta name="theme-color" content="#0F172A" />
@@ -266,8 +266,7 @@ export default function RootLayout({
               });
             ` }} />
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-          <title>DONZO - LEVEL UP YOUR GAME</title>
-          <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
+          <SeoTags />
           <link rel="icon" href="/images/donzo.png" type="image/png" />
           <link rel="apple-touch-icon" href="/images/donzo.png" />
           <meta name="theme-color" content="#0F172A" />
@@ -302,8 +301,7 @@ export default function RootLayout({
           });
         ` }} />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-        <title>DONZO - LEVEL UP YOUR GAME</title>
-        <meta name="description" content="DONZO — o'yinlar va raqamli xizmatlarga tez, xavfsiz va qulay top-up platformasi" />
+        <SeoTags />
         <link rel="icon" href="/images/donzo.png" type="image/png" />
         <link rel="apple-touch-icon" href="/images/donzo.png" />
         <meta name="theme-color" content="#0F172A" />

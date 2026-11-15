@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FiZap, FiShield, FiClock, FiTrendingUp, FiAward } from 'react-icons/fi';
+import { FiZap, FiShield, FiClock, FiTrendingUp, FiAward, FiCheckCircle } from 'react-icons/fi';
 import { serviceAPI, categoryAPI, referralAPI, bannerAPI } from '@/lib/api';
 import { FiShare2, FiCopy } from 'react-icons/fi';
 
@@ -135,6 +135,9 @@ export default function HomePage() {
   const [topTab, setTopTab] = useState('today');
   const [isLoading, setIsLoading] = useState(true);
   const [banners, setBanners] = useState<any[]>([]);
+  const [topData, setTopData] = useState<any[]>([]);
+  const [topLoading, setTopLoading] = useState(true);
+  const [stats, setStats] = useState<any>(null);
   const { user, isAuthenticated } = useStore();
 
   // Hero carousel state
@@ -162,7 +165,17 @@ export default function HomePage() {
       }
     };
     fetchData();
+    serviceAPI.stats().then((r) => setStats(r.data)).catch(() => {});
   }, []);
+
+  // "Eng ko'p sotilgan" — backend'dagi HAQIQIY bajarilgan buyurtmalar bo'yicha
+  useEffect(() => {
+    setTopLoading(true);
+    serviceAPI.top(topTab)
+      .then((r) => setTopData(r.data?.results || []))
+      .catch(() => setTopData([]))
+      .finally(() => setTopLoading(false));
+  }, [topTab]);
 
   // Referral attribution: when a guest lands on /?ref=CODE (login removed, the
   // link comes from ReferralSection), apply the code once the Telegram auto-login
@@ -217,15 +230,10 @@ export default function HomePage() {
     return null;
   };
 
-  // "Sotuv Top 10" — ranked by package count (popularity proxy), no backend changes
-  const topServices = [...filteredServices]
-    .sort((a: any, b: any) => Number(b.packages_count || 0) - Number(a.packages_count || 0))
-    .slice(0, 10);
-
-  // Most popular service in the visible set → gets the "Popular" ribbon
-  const mostPopularId = filteredServices.length
-    ? [...filteredServices].sort((a: any, b: any) => Number(b.packages_count || 0) - Number(a.packages_count || 0))[0]?.id
-    : null;
+  // Eng ko'p sotilgan xizmatlar (filtrlangan kategoriya ichida) va "Top" belgisi
+  const visibleIds = new Set(filteredServices.map((x: any) => x.id));
+  const topServices = topData.filter((t: any) => visibleIds.has(t.id)).slice(0, 10);
+  const mostPopularId = topServices[0]?.id ?? null;
 
   return (
     <div>
@@ -312,6 +320,25 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ═══════════ CATEGORY FILTER ═══════════ */}
+      <div className="chip-row">
+        <button
+          onClick={() => setSelectedCategory(null)}
+          className={`chip ${selectedCategory === null ? 'active' : ''}`}
+        >
+          Barchasi
+        </button>
+        {categories.map((cat: any) => (
+          <button
+            key={cat.id}
+            onClick={() => setSelectedCategory(cat.id)}
+            className={`chip ${selectedCategory === cat.id ? 'active' : ''}`}
+          >
+            {cat.name}
+          </button>
+        ))}
+      </div>
+
       {/* ═══════════ O'YINLAR — 2-column grid ═══════════ */}
       <div id="services" className="scroll-mt-20">
         <div className="mini-section-head">
@@ -339,7 +366,7 @@ export default function HomePage() {
               const price = cheapestPrice(service);
               return (
                 <Link key={service.id} href={`/services/${service.slug}`} className="mini-card">
-                  {mostPopularId === service.id && <span className="mini-card-ribbon">Popular</span>}
+                  {mostPopularId === service.id && <span className="mini-card-ribbon">Top</span>}
                   <span className="mini-card-online" aria-hidden="true" />
                   <div className="mini-card-emoji">
                     {service.image_url ? (
@@ -365,30 +392,11 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* ═══════════ CATEGORY FILTER ═══════════ */}
-      <div className="chip-row">
-        <button
-          onClick={() => setSelectedCategory(null)}
-          className={`chip ${selectedCategory === null ? 'active' : ''}`}
-        >
-          Barchasi
-        </button>
-        {categories.map((cat: any) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`chip ${selectedCategory === cat.id ? 'active' : ''}`}
-          >
-            {cat.name}
-          </button>
-        ))}
-      </div>
-
       {/* ═══════════ SOTUV TOP 10 ═══════════ */}
       <div className="mini-section-head">
         <div className="mini-section-title flex items-center gap-2">
           <FiTrendingUp className="w-5 h-5 text-[#2DD4BF]" />
-          Sotuv Top 10
+          Eng ko'p sotilgan
         </div>
       </div>
 
@@ -404,7 +412,11 @@ export default function HomePage() {
         ))}
       </div>
 
-      {topServices.length === 0 ? (
+      {topLoading ? (
+        <div className="pb-2 px-4 space-y-2">
+          {[0, 1, 2].map((i) => <div key={i} className="mini-card shimmer !border-0" style={{ height: 64 }} />)}
+        </div>
+      ) : topServices.length === 0 ? (
         /* ═══ Professional Empty State ═══ */
         <div className="premium-empty">
           <div className="premium-empty-icon">
@@ -418,7 +430,7 @@ export default function HomePage() {
       ) : (
         <div className="pb-2">
           {topServices.map((service: any, i: number) => {
-            const price = cheapestPrice(service);
+            const price = service.min_price;
             return (
               <Link key={service.id} href={`/services/${service.slug}`} className="top10-row">
                 <div className={`top10-rank ${i >= 3 ? 'off' : ''}`}>{i + 1}</div>
@@ -438,10 +450,10 @@ export default function HomePage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white truncate">{service.name}</p>
                   <p className="text-[11px] text-[#9CA3AF]">
-                    {Number(service.packages_count || 0)} ta paket
+                    {Number(service.sold || 0)} ta buyurtma bajarildi
                   </p>
                 </div>
-                {price !== null && (
+                {price !== null && price !== undefined && (
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-[#2DD4BF]">
                       {Number(price).toLocaleString()} so'm
@@ -455,20 +467,42 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ═══════════ TRUST STRIP ═══════════ */}
-      <div className="mini-panel !mx-4 mb-6 flex items-center justify-around">
-        <div className="flex flex-col items-center gap-1">
-          <FiZap className="w-5 h-5 text-[#2DD4BF]" />
-          <span className="text-[10px] text-[#9CA3AF]">Tezkor</span>
+      {/* ═══════════ TRUST STRIP — haqiqiy raqamlar ═══════════ */}
+      <div className="trust-strip mini-panel !mx-4 mb-6">
+        <div className="trust-grid">
+          <div className="trust-item">
+            <FiZap className="w-5 h-5 text-[#2DD4BF]" />
+            <span>Tez yetkazish</span>
+          </div>
+          <div className="trust-item">
+            <FiShield className="w-5 h-5 text-[#34D399]" />
+            <span>Xavfsiz to'lov</span>
+          </div>
+          <div className="trust-item">
+            {stats && stats.completed_7d >= 5 ? (
+              <>
+                <span className="trust-number">{Number(stats.completed_7d).toLocaleString()}</span>
+                <span>buyurtma / 7 kun</span>
+              </>
+            ) : (
+              <>
+                <FiClock className="w-5 h-5 text-[#6366F1]" />
+                <span>24/7 yordam</span>
+              </>
+            )}
+          </div>
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <FiShield className="w-5 h-5 text-[#34D399]" />
-          <span className="text-[10px] text-[#9CA3AF]">Xavfsiz</span>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <FiClock className="w-5 h-5 text-[#6366F1]" />
-          <span className="text-[10px] text-[#9CA3AF]">24/7</span>
-        </div>
+        {stats?.proof_channel && (
+          <a
+            href={`https://t.me/${stats.proof_channel}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="trust-proof"
+          >
+            <FiCheckCircle className="w-4 h-4" />
+            Bajarilgan buyurtmalar — isbot kanalida
+          </a>
+        )}
       </div>
     </div>
   );

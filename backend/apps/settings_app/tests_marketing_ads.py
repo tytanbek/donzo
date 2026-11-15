@@ -282,3 +282,36 @@ class BroadcastHelperTests(TestCase):
         self.assertEqual((sent, failed, total), (1, 0, 1))
         self.assertEqual(calls, [('sendPhoto', '-100111')])
         self.assertEqual(sum(v.sends for v in AdVariantStat.objects.all()), 1)
+
+
+class SpotlightImageTests(TestCase):
+    def setUp(self):
+        Setting.clear_cache()
+        Setting.set_setting('web_app_url', 'https://donzo-eight.vercel.app')
+        Setting.set_setting('marketing_daily_image', '')
+
+    def test_game_images(self):
+        self.assertTrue(marketing_ads.spotlight_image('s-pubg-mobile').endswith('/ads/ad-pubg.jpg'))
+        self.assertTrue(marketing_ads.spotlight_image('s-free-fire').endswith('/ads/ad-freefire.jpg'))
+        self.assertTrue(marketing_ads.spotlight_image('s-mobile-legends').endswith('/ads/ad-mlbb.jpg'))
+        self.assertTrue(marketing_ads.spotlight_image('s-telegram-premium').endswith('/ads/ad-premium.jpg'))
+        self.assertEqual(marketing_ads.spotlight_image('s-roblox'), '')
+        self.assertEqual(marketing_ads.spotlight_image('c1'), '')
+
+    def test_payload_uses_game_image_unless_admin_set_one(self):
+        from unittest import mock
+        with mock.patch.object(marketing_ads, 'compose_ad',
+                               return_value=('cap', marketing_ads.build_reply_markup('s-pubg-mobile'), 's-pubg-mobile')):
+            _, payload = marketing_ads.ad_payload('-1', 'https://x/ads/ad-1.jpg')
+            self.assertTrue(payload['photo'].endswith('/ads/ad-pubg.jpg'))
+            Setting.set_setting('marketing_daily_image', 'https://cdn.example.com/own.png')
+            _, payload = marketing_ads.ad_payload('-1', 'https://cdn.example.com/own.png')
+            self.assertEqual(payload['photo'], 'https://cdn.example.com/own.png')
+
+    def test_all_spotlight_images_exist(self):
+        from pathlib import Path
+        from django.conf import settings
+        public = Path(settings.BASE_DIR).parent / 'frontend' / 'public' / 'ads'
+        for _, name in marketing_ads.SPOTLIGHT_IMAGES:
+            self.assertTrue((public / name).exists(), name)
+        self.assertTrue((public / 'og.jpg').exists())

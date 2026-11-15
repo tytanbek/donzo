@@ -249,6 +249,9 @@ export const categoryAPI = {
 export const serviceAPI = {
   list: (params?: any) => api.get('/services/', { params }),
   detail: (slug: string) => api.get(`/services/${slug}/`),
+  // Haqiqiy sotuv bo'yicha top (today | week | month) va ishonch statistikasi
+  top: (period: string) => api.get('/services/top/', { params: { period } }),
+  stats: () => api.get('/services/stats/'),
   create: (data: any) => api.post('/admin/services/', data),
   update: (id: number, data: any) => api.put(`/admin/services/${id}/`, data),
   delete: (id: number) => api.delete(`/admin/services/${id}/`),

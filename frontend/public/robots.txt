@@ -1,3 +1,6 @@
 User-agent: *
 Allow: /
-Sitemap: https://topuphub.uz/sitemap.xml
+Disallow: /admin
+Disallow: /operator
+Disallow: /support
+Sitemap: https://donzo-eight.vercel.app/sitemap.xml

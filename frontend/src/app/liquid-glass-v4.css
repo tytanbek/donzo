@@ -461,3 +461,200 @@ html body .amount-chip.active {
     animation: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v5 — minimalistik detallar: paket kartalari, ishonch bloki,
+   muvaffaqiyat animatsiyasi, admin jadvallari
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Paket kartasi ─── */
+.pkg-card {
+  position: relative;
+  text-align: left;
+  padding: 16px 14px 14px;
+  border-radius: 20px;
+  background: var(--lg4-fill), rgba(10, 14, 30, 0.3);
+  backdrop-filter: var(--lg4-blur);
+  -webkit-backdrop-filter: var(--lg4-blur);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 18px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.3s var(--lg4-ease), box-shadow 0.35s var(--lg4-ease), background 0.3s var(--lg4-ease);
+  overflow: hidden;
+}
+.pkg-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.16) 50%, transparent 65%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.pkg-card.is-selected {
+  border-color: rgba(0, 229, 255, 0.75);
+  background:
+    linear-gradient(145deg, rgba(0, 229, 255, 0.2), rgba(168, 85, 247, 0.14)),
+    rgba(10, 14, 30, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 1px rgba(0, 229, 255, 0.35),
+    0 12px 32px rgba(0, 229, 255, 0.22);
+}
+.pkg-card.is-selected::after { animation: pkg-shine 0.9s var(--lg4-ease) 1; }
+.pkg-card.is-best:not(.is-selected) { border-color: rgba(251, 191, 36, 0.45); }
+@media (hover: hover) and (pointer: fine) {
+  .pkg-card:hover { border-color: rgba(255, 255, 255, 0.28); }
+}
+.pkg-name { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
+.pkg-label { margin-top: 2px; font-size: 11px; color: #64748b; }
+.pkg-price {
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #e6fbff;
+  letter-spacing: -0.02em;
+}
+.pkg-price span { font-size: 12px; font-weight: 600; color: #7dd3fc; }
+.pkg-save {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+.pkg-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 3px 9px;
+  border-bottom-left-radius: 12px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #1a1203;
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
+  box-shadow: 0 4px 14px rgba(251, 191, 36, 0.35);
+}
+.pkg-card.is-best .pkg-check { top: 26px; }
+.pkg-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #00e5ff, #3b82f6);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.55);
+}
+@keyframes pkg-shine {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+/* ─── Ishonch bloki ─── */
+.trust-strip { padding: 14px 12px !important; }
+.trust-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.trust-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 10.5px;
+  color: #9ca3af;
+}
+.trust-number {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.trust-proof {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  transition: background 0.25s ease, transform 0.25s var(--lg4-spring);
+}
+.trust-proof:active { transform: scale(0.97); }
+
+/* ─── Muvaffaqiyat belgisi ─── */
+.success-check {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 24px;
+  display: grid;
+  place-items: center;
+}
+.success-svg { width: 84px; height: 84px; filter: drop-shadow(0 0 18px var(--sc)); }
+.success-ring {
+  position: absolute;
+  inset: 6px;
+  border-radius: 999px;
+  border: 2px solid var(--sc);
+  opacity: 0;
+  animation: success-ring 1.8s var(--lg4-ease) 0.5s infinite;
+}
+.success-ring-2 { animation-delay: 1.1s; }
+@keyframes success-ring {
+  0% { transform: scale(0.8); opacity: 0.55; }
+  100% { transform: scale(1.65); opacity: 0; }
+}
+
+/* ─── Admin panel: shisha yon panel va jadvallar ─── */
+html body aside .h-full.p-4 {
+  background: var(--lg4-fill), rgba(6, 10, 22, 0.55);
+  backdrop-filter: var(--lg4-blur-strong);
+  -webkit-backdrop-filter: var(--lg4-blur-strong);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+.admin-main table { border-collapse: separate; border-spacing: 0; }
+.admin-main thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(10, 14, 30, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.admin-main tbody tr { transition: background 0.2s ease; }
+.admin-main tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
+.admin-main tbody tr:nth-child(-n+12) { animation: lg4-rise-soft 0.45s var(--lg4-ease) backwards; }
+.admin-main tbody tr:nth-child(2) { animation-delay: 0.03s; }
+.admin-main tbody tr:nth-child(3) { animation-delay: 0.06s; }
+.admin-main tbody tr:nth-child(4) { animation-delay: 0.09s; }
+.admin-main tbody tr:nth-child(5) { animation-delay: 0.12s; }
+.admin-main tbody tr:nth-child(n+6) { animation-delay: 0.15s; }
+
+/* ─── Bosh sahifa: Top qatorlari kirishi ─── */
+.top10-row { animation: lg4-rise-soft 0.5s var(--lg4-ease) backwards; }
+.top10-row:nth-child(2) { animation-delay: 0.05s; }
+.top10-row:nth-child(3) { animation-delay: 0.1s; }
+.top10-row:nth-child(n+4) { animation-delay: 0.15s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pkg-card.is-selected::after,
+  .success-ring,
+  .admin-main tbody tr,
+  .top10-row { animation: none !important; }
+}

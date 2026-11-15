@@ -9,6 +9,7 @@ import { serviceAPI, orderAPI, paymentAPI, authAPI } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { PageSkeleton } from '@/components/Skeleton';
 import PackageSelector from '@/components/PackageSelector';
+import SuccessCheck from '@/components/SuccessCheck';
 import SmartForm from '@/components/SmartForm';
 import PaymentMethodSelector from '@/components/PaymentMethodSelector';
 import toast from 'react-hot-toast';
@@ -286,17 +287,13 @@ export default function ServiceDetailPage() {
         >
           {paid ? (
             <>
-              <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
-                <FiCheck className="w-10 h-10 text-green-400" />
-              </div>
+              <SuccessCheck tone="success" />
               <h2 className="text-2xl font-bold text-white mb-2">Buyurtma qabul qilindi!</h2>
               <p className="text-[#94A3B8] mb-6">To'lov balansdan amalga oshirildi.</p>
             </>
           ) : (
             <>
-              <div className="w-20 h-20 rounded-full bg-amber-500/15 flex items-center justify-center mx-auto mb-6">
-                <FiInfo className="w-10 h-10 text-amber-400" />
-              </div>
+              <SuccessCheck tone="pending" />
               <h2 className="text-2xl font-bold text-white mb-2">Buyurtma yaratildi — hali to'lanmagan</h2>
               <p className="text-[#94A3B8] mb-2">
                 Buyurtmangiz saqlandi, lekin to'lov hali amalga oshirilmagan.

@@ -121,6 +121,25 @@ def _site_origin() -> str:
     return DEFAULT_SITE
 
 
+# Spotlight postlar uchun o'yinga mos rasm (slug/nomdagi kalit so'z bo'yicha)
+SPOTLIGHT_IMAGES = (
+    ('pubg', 'ad-pubg.jpg'),
+    ('free-fire', 'ad-freefire.jpg'), ('freefire', 'ad-freefire.jpg'),
+    ('mobile-legends', 'ad-mlbb.jpg'), ('mlbb', 'ad-mlbb.jpg'),
+    ('telegram', 'ad-premium.jpg'), ('premium', 'ad-premium.jpg'), ('stars', 'ad-premium.jpg'),
+)
+
+
+def spotlight_image(variant: str) -> str:
+    """s-<slug> varianti uchun o'yin rasmi URL'i (mos rasm bo'lmasa — '')."""
+    if not variant.startswith('s-'):
+        return ''
+    for key, filename in SPOTLIGHT_IMAGES:
+        if key in variant:
+            return f'{_site_origin()}/ads/{filename}'
+    return ''
+
+
 def pick_ad_image(rng=random) -> str:
     """Admin o'z rasmini (marketing_daily_image) bergan bo'lsa — o'sha,
     aks holda 3 ta premium rasmdan tasodifiy biri."""
@@ -314,7 +333,10 @@ def build_premium_ad(rng=random):
 
 def ad_payload(chat_id: str, image: str = ''):
     """(method, payload): rasm bo'lsa sendPhoto, aks holda sendMessage."""
-    caption, markup, _ = compose_ad()
+    caption, markup, variant = compose_ad()
+    # Admin o'z rasmini bermagan bo'lsa — spotlight postga o'yinning o'z rasmi
+    if image and not _setting('marketing_daily_image'):
+        image = spotlight_image(variant) or image
     base = {'chat_id': chat_id, 'parse_mode': 'HTML', 'reply_markup': markup}
     if image:
         return 'sendPhoto', {**base, 'photo': image, 'caption': caption}
