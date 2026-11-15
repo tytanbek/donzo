@@ -102,3 +102,56 @@ class AdminServiceFieldViewSet(viewsets.ModelViewSet):
     queryset = ServiceField.objects.all()
     serializer_class = ServiceFieldWriteSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+
+# ── Ochiq marketing ma'lumotlari (Mini App bosh sahifasi uchun) ──
+
+from rest_framework.decorators import api_view, permission_classes as perm_classes
+from rest_framework.response import Response
+
+TOP_PERIODS = {'today': 1, 'week': 7, 'month': 30}
+
+
+@api_view(['GET'])
+@perm_classes([permissions.AllowAny])
+def top_services(request):
+    """GET /api/v1/services/top/?period=today|week|month
+
+    Shu davrda eng ko'p BAJARILGAN buyurtma olgan xizmatlar (haqiqiy sotuv).
+    Mijoz ma'lumotlari yo'q — faqat xizmat va sotuv soni.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    period = request.query_params.get('period', 'week')
+    days = TOP_PERIODS.get(period, 7)
+    since = timezone.now() - timedelta(days=days)
+    rows = (
+        Service.objects.filter(is_active=True)
+        .annotate(
+            sold=Count('orders', filter=Q(orders__status='completed', orders__updated_at__gte=since), distinct=True),
+            min_price=Min('packages__price', filter=Q(packages__is_active=True)),
+        )
+        .filter(sold__gt=0)
+        .order_by('-sold', 'name')[:10]
+    )
+    return Response({'period': period, 'results': [
+        {'id': s.id, 'slug': s.slug, 'name': s.name, 'image_url': s.image_url,
+         'sold': s.sold, 'min_price': float(s.min_price) if s.min_price is not None else None}
+        for s in rows
+    ]})
+
+
+@api_view(['GET'])
+@perm_classes([permissions.AllowAny])
+def public_stats(request):
+    """GET /api/v1/services/stats/ — ishonch belgilari uchun haqiqiy raqamlar."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.orders.models import Order
+    from apps.settings_app.marketing_ads import _bot_username, _public_proof_channel
+    since = timezone.now() - timedelta(days=7)
+    return Response({
+        'completed_7d': Order.objects.filter(status='completed', updated_at__gte=since).count(),
+        'proof_channel': _public_proof_channel(),
+        'bot_username': _bot_username(),
+    })

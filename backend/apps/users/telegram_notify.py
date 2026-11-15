@@ -324,6 +324,7 @@ def notify_order_status(order, old_status: str, new_status: str):
             lines.append(f"\n❓ <b>Sabab:</b> {order.cancel_reason}")
         if new_status == 'completed':
             lines.append("\n🎉 Xizmat yetkazildi. O'yindan zavqlaning!")
+            lines.append("🎁 Do'stingizni taklif qiling — uning har buyurtmasidan 5% sizga: /taklif")
         send_to_user(order.customer, '\n'.join(lines), reply_markup=_order_webapp_button(order))
     except Exception:
         logger.exception("Failed to notify order status")

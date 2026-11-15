@@ -547,6 +547,11 @@ def _daily_marketing_loop():
         except Exception:
             pass
         try:
+            from apps.settings_app.growth import run_periodic
+            run_periodic(_tashkent_now())
+        except Exception as exc:
+            print(f"[GROWTH] xato: {type(exc).__name__}", flush=True)
+        try:
             _send_daily_marketing()
         except Exception:
             pass
@@ -690,6 +695,7 @@ _PUBLIC_COMMANDS = [
     BotCommand('login', 'Web App uchun kirish kodini olish'),
     BotCommand('balance', 'Balansim va keshbek'),
     BotCommand('orders', 'Buyurtmalarim'),
+    BotCommand('taklif', "Do'stlarni taklif qilish — 5% cashback"),
     BotCommand('help', 'Yordam va qo\'llab-quvvatlash'),
 ]
 
@@ -2593,6 +2599,35 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
+async def taklif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/taklif — shaxsiy referal havola, statistika va ulashish tugmasi."""
+    bump(updates=1, messages=1, command='taklif')
+    try:
+        from apps.settings_app.growth import referral_text
+        user = await db_user_by_tg(str(update.effective_user.id))
+        text, markup = await sync_to_async(referral_text)(user)
+        kb = None
+        if markup:
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(b['text'], url=b['url'])
+                                        for b in row] for row in markup['inline_keyboard']])
+        await update.effective_message.reply_html(text, reply_markup=kb, disable_web_page_preview=True)
+    except Exception as exc:
+        print(f'[BOT] /taklif xatosi: {type(exc).__name__}', flush=True)
+        await update.effective_message.reply_text("Hozir havolani ko'rsatib bo'lmadi, birozdan keyin urinib ko'ring.")
+
+
+async def remind_off_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Eslatma xabaridagi "🔕 Eslatmalarni o'chirish" tugmasi."""
+    query = update.callback_query
+    try:
+        from apps.settings_app.growth import opt_out
+        await sync_to_async(opt_out)(str(query.from_user.id))
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("🔕 Eslatmalar o'chirildi. Boshqa yubormaymiz.")
+    except Exception as exc:
+        print(f'[BOT] remind_off xatosi: {type(exc).__name__}', flush=True)
+
+
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline button clicks (balance / orders / security / suspicious)."""
     query = update.callback_query
@@ -2616,6 +2651,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await payment_info(update, context)
     elif query.data == 'staff_stats':
         await staff_stats(update, context)
+    elif query.data == 'remind_off':
+        await remind_off_callback(update, context)
 
 
 def main():
@@ -2679,6 +2716,7 @@ def main():
     application.add_handler(CommandHandler('restart', restart_command))
     application.add_handler(CommandHandler('tunnel', tunnel_command))
     application.add_handler(CommandHandler('reklama', reklama_command))
+    application.add_handler(CommandHandler('taklif', taklif_command))
     # DONZO AI — staff guruhida botga reply / @-mention / shaxsiy xabar
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, staff_ai_handler))
     # Ovozli xabarlar — staff guruhida eshitib tushunadi (Gemini transkripsiya)

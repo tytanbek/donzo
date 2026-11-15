@@ -379,6 +379,19 @@ class SiteSetting:
         # marketing_promo_code — reklamada ko'rsatiladigan promokod (faqat amalda
         #   bo'lsa chiqadi: faol, muddati o'tmagan, limiti tugamagan).
         'marketing_promo_code': '',
+
+        # ── O'sish (growth) ──
+        # proof_channel_daily_report — isbot kanaliga kunlik hisobot (HH:MM, Toshkent);
+        # proof_channel_price_alerts — narx o'zgarsa kanalga e'lon;
+        # marketing_reminders_enabled — qaytgan mijozlarga eslatma;
+        # marketing_reminder_days — oxirgi buyurtmadan necha kun keyin eslatiladi;
+        # marketing_reminders_per_day — kuniga ko'pi bilan nechta eslatma.
+        'proof_channel_daily_report': 'True',
+        'proof_channel_daily_time': '21:00',
+        'proof_channel_price_alerts': 'True',
+        'marketing_reminders_enabled': 'True',
+        'marketing_reminder_days': '14',
+        'marketing_reminders_per_day': '30',
     }
 
     @classmethod
@@ -628,3 +641,33 @@ class AdStart(models.Model):
     class Meta:
         db_table = 'ad_starts'
         ordering = ['-created_at']
+
+
+class PriceAnnouncement(models.Model):
+    """Paket narxi o'zgarishi — isbot kanaliga e'lon qilish navbati.
+
+    Admin bir nechta narxni ketma-ket o'zgartirsa, bot ularni bir necha
+    daqiqadan keyin BITTA xabarga jamlab yuboradi (spam emas).
+    """
+    service_name = models.CharField(max_length=200)
+    package_name = models.CharField(max_length=200)
+    old_price = models.DecimalField(max_digits=15, decimal_places=2)
+    new_price = models.DecimalField(max_digits=15, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    announced_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = 'price_announcements'
+        ordering = ['created_at']
+
+
+class CustomerReminder(models.Model):
+    """Qaytgan mijozga eslatma jurnali (chastota cheklovi va o'chirish)."""
+    telegram_id = models.CharField(max_length=100, unique=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    sent_count = models.PositiveIntegerField(default=0)
+    opted_out = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'customer_reminders'
