@@ -450,6 +450,8 @@ def _send_daily_marketing():
                     ok = bool(res and res.get('ok'))
                 if ok:
                     MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+                    from apps.settings_app.marketing_ads import record_ad_sent
+                    record_ad_sent(payload)
                     sent += 1
             except Exception:
                 continue
@@ -459,6 +461,47 @@ def _send_daily_marketing():
               flush=True)
     except Exception as exc:
         print(f"[MARKETING] Kunlik reklama xatosi: {type(exc).__name__}", flush=True)
+
+
+def _broadcast_premium_ad_to_all_groups(token: str = ''):
+    """Premium postni barcha marketing guruhlariga yuboradi (sinxron).
+
+    Operatsion chatlar va isbot kanali o'tkazib yuboriladi; kunlik limitga
+    qaramaydi, lekin yuborilganlar limitga va variant statistikasiga
+    yoziladi. Qaytaradi: (yuborildi, xato, jami_nomzod).
+    """
+    from apps.settings_app.models import MarketingGroupStat, Setting
+    from apps.settings_app.marketing_ads import (
+        ad_payload, pick_ad_image, record_ad_sent, text_fallback,
+    )
+    token = token or (Setting.get_setting('telegram_bot_token', '') or '')
+    if not token:
+        return 0, 0, 0
+    skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
+            str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
+            str((Setting.get_setting('proof_channel_id', '') or '').strip())}
+    groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
+    sent = failed = total = 0
+    for g in groups:
+        cid = str(g['chat_id'] or '')
+        if not cid or cid in skip:
+            continue
+        total += 1
+        try:
+            method, payload = ad_payload(cid, pick_ad_image())
+            res = _tg_api(token, method, payload)
+            if not (res and res.get('ok')) and method == 'sendPhoto':
+                res = _tg_api(token, 'sendMessage', text_fallback(payload))
+            if res and res.get('ok'):
+                MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+                record_ad_sent(payload)
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+        time.sleep(1)  # Telegram rate limit
+    return sent, failed, total
 
 
 def _send_requested_broadcast():
@@ -473,8 +516,7 @@ def _send_requested_broadcast():
     Natija `marketing_broadcast_result`ga yoziladi. Hech qachon xato otmaydi.
     """
     try:
-        from apps.settings_app.models import MarketingGroupStat, Setting
-        from apps.settings_app.marketing_ads import ad_payload, pick_ad_image, text_fallback
+        from apps.settings_app.models import Setting
 
         request_id = (Setting.get_setting('marketing_broadcast_request', '') or '').strip()
         if not request_id or request_id == (Setting.get_setting('marketing_broadcast_done', '') or '').strip():
@@ -484,28 +526,7 @@ def _send_requested_broadcast():
             return
         Setting.set_setting('marketing_broadcast_done', request_id)
 
-        skip = {str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
-                str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
-                str((Setting.get_setting('proof_channel_id', '') or '').strip())}
-        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
-        sent = failed = 0
-        for g in groups:
-            cid = str(g['chat_id'] or '')
-            if not cid or cid in skip:
-                continue
-            try:
-                method, payload = ad_payload(cid, pick_ad_image())
-                res = _tg_api(token, method, payload)
-                if not (res and res.get('ok')) and method == 'sendPhoto':
-                    res = _tg_api(token, 'sendMessage', text_fallback(payload))
-                if res and res.get('ok'):
-                    MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
-                    sent += 1
-                else:
-                    failed += 1
-            except Exception:
-                failed += 1
-            time.sleep(1)  # Telegram rate limit
+        sent, failed, _total = _broadcast_premium_ad_to_all_groups(token)
         summary = f"{request_id}: {sent} ta guruhga yuborildi, {failed} ta xato ({_tashkent_now():%Y-%m-%d %H:%M})"
         Setting.set_setting('marketing_broadcast_result', summary)
         print(f"[MARKETING] Bir martalik reklama — {summary}", flush=True)
@@ -575,6 +596,8 @@ def _send_creative_ad_to_groups():
             res = _tg_api(token, 'sendMessage', text_fallback(payload))
         if res and res.get('ok'):
             MarketingGroupStat.record(cid, g.get('chat_title', ''), 'ad')
+            from apps.settings_app.marketing_ads import record_ad_sent
+            record_ad_sent(payload)
             print(f"[MARKETING] Creative reklama: {cid} ({g.get('chat_title', '')})", flush=True)
     except Exception as exc:
         print(f"[MARKETING] Creative reklama xatosi: {type(exc).__name__}", flush=True)
@@ -778,6 +801,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Linked user? Show balance + staff extras in /start ──
     tg_id = str(update.effective_user.id)
     user = await db_user_by_tg(tg_id)
+
+    # ── Reklama samaradorligi: /start ad_<variant> ──
+    if context.args and context.args[0].startswith('ad_'):
+        try:
+            from apps.settings_app.marketing_ads import record_ad_start
+            await sync_to_async(record_ad_start)(context.args[0], tg_id)
+        except Exception as e:
+            print(f'[BOT] Reklama kirishini yozib bo\'lmadi: {type(e).__name__}')
 
     # ── Referal tizimi: /start ref_KOD ──
     ref_code = None
@@ -1344,75 +1375,26 @@ async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Barcha guruhlarga professional DONZO reklamasi yuborilmoqda."
     )
 
+    import asyncio
     try:
-        from apps.settings_app.models import MarketingGroupStat, Setting
-        from apps.settings_app.marketing_ads import pick_ad_image
-        promo_image = pick_ad_image()
-        skip = {
-            str((Setting.get_setting('payment_report_chat_id', '') or '').strip()),
-            str((Setting.get_setting('payment_monitor_chat_id', '') or '').strip()),
-        }
-        groups = list(MarketingGroupStat.objects.all().values('chat_id', 'chat_title'))
-    except Exception:
-        groups = []
-        skip = set()
+        sent, failed, total = await asyncio.to_thread(_broadcast_premium_ad_to_all_groups)
+    except Exception as exc:
+        await update.effective_message.reply_html(
+            f"❌ Reklama yuborishda xato: {type(exc).__name__}")
+        return
 
-    if not groups:
+    if total == 0:
         await update.effective_message.reply_html(
             "❌ Marketing guruhlari topilmadi.\n\n"
             "Bot qo'shilgan guruhlar ro'yxati bo'sh."
         )
         return
 
-    sent = 0
-    failed = 0
-    sent_groups = []  # muvaffaqiyatli yuborilgan guruhlar (statistika uchun)
-    for g in groups:
-        cid = str(g['chat_id'])
-        if not cid or cid in skip:
-            continue
-        try:
-            import json as _json
-            import urllib.request as _ur
-            token = Setting.get_setting('telegram_bot_token', '') or ''
-            if not token:
-                continue
-            from apps.settings_app.marketing_ads import ad_payload
-            method, body = ad_payload(cid, promo_image)
-            payload = _json.dumps(body).encode()
-            req = _ur.Request(
-                f'https://api.telegram.org/bot{token}/{method}',
-                data=payload,
-                headers={'Content-Type': 'application/json'},
-            )
-            with _ur.urlopen(req, timeout=15) as resp:
-                result = _json.loads(resp.read())
-                if result.get('ok'):
-                    sent += 1
-                    sent_groups.append((cid, g.get('chat_title', '')))
-                else:
-                    failed += 1
-            import time as _t
-            _t.sleep(1)  # rate limit
-        except Exception:
-            failed += 1
-
-    try:
-        from apps.settings_app.models import MarketingGroupStat
-        # Faqat HAQIQATDA yuborilgan guruhlar hisoblanadi (avval muvaffaqiyatsiz
-        # va o'tkazib yuborilgan guruhlar ham "reklama" deb yozilardi). Bu
-        # qo'lda yuborilgan reklama ham kunlik limitdan o'tadi — shu sababli
-        # o'sha kuni avtomatik reklamalar o'z-o'zidan kamayadi.
-        for cid, title in sent_groups:
-            MarketingGroupStat.record(cid, title, 'ad')
-    except Exception:
-        pass
-
     await update.effective_message.reply_html(
         f"📢 <b>Reklama yuborildi!</b>\n\n"
         f"✅ Muvaffaqiyatli: <b>{sent}</b> guruh\n"
         f"❌ Xato: <b>{failed}</b> guruh\n\n"
-        f"Rasm: professional DONZO reklamasi"
+        f"📊 Natijalar: admin panel → Marketing → Reklama samaradorligi"
     )
 
 

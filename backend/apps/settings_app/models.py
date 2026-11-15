@@ -376,6 +376,9 @@ class SiteSetting:
         #   yuboriladigan ogohlantirish matni ({name} — foydalanuvchi nomi).
         'marketing_mention_only': 'True',
         'marketing_blacklist_notice': '',
+        # marketing_promo_code — reklamada ko'rsatiladigan promokod (faqat amalda
+        #   bo'lsa chiqadi: faol, muddati o'tmagan, limiti tugamagan).
+        'marketing_promo_code': '',
     }
 
     @classmethod
@@ -582,3 +585,46 @@ class MarketingGroupMember(models.Model):
             cls.objects.filter(last_seen_at__lt=timezone.now() - timedelta(days=days)).delete()
         except Exception:
             logger.exception('MarketingGroupMember.prune failed')
+
+
+class AdVariantStat(models.Model):
+    """Guruh reklamasining har bir varianti bo'yicha yuborishlar va kirishlar.
+
+    Variant reklamadagi "Buyurtma berish" tugmasining /start parametrida
+    (`ad_<variant>`) keladi, shuning uchun qaysi post botga odam olib
+    kelganini aniq bilamiz.
+    """
+    variant = models.CharField(max_length=64, unique=True)
+    sends = models.PositiveIntegerField(default=0)
+    starts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ad_variant_stats'
+        ordering = ['-sends']
+
+    def __str__(self):
+        return f'{self.variant}: {self.sends} yuborish, {self.starts} kirish'
+
+    @classmethod
+    def bump(cls, variant: str, field: str):
+        from django.db.models import F
+        if field not in ('sends', 'starts') or not variant:
+            return
+        try:
+            obj, _ = cls.objects.get_or_create(variant=variant[:64])
+            cls.objects.filter(pk=obj.pk).update(**{field: F(field) + 1})
+        except Exception:
+            logger.exception('AdVariantStat.bump failed')
+
+
+class AdStart(models.Model):
+    """Reklama tugmasi orqali botga kirgan foydalanuvchi (konversiya uchun)."""
+    variant = models.CharField(max_length=64, db_index=True)
+    telegram_id = models.CharField(max_length=32, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'ad_starts'
+        ordering = ['-created_at']

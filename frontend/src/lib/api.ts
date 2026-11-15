@@ -346,6 +346,7 @@ export const adminAPI = {
     fragmentSync: () => api.post('/admin/fragment-sync/', {}),
     proofChannelTest: () => api.post('/admin/proof-channel/test/', {}),
     marketingStats: () => api.get('/admin/marketing-stats/'),
+    marketingAds: () => api.get('/admin/marketing-ads/'),
 };
 
 // Telegram Web App sessions (admin — recent Web App logins)

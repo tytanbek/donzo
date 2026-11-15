@@ -60,6 +60,8 @@ export default function AdminMarketingPage() {
   const [dailyEnabled, setDailyEnabled] = useState<'true' | 'false'>('false');
   const [dailyTime, setDailyTime] = useState('09:00');
   const [dailyImage, setDailyImage] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [adStats, setAdStats] = useState<any>(null);
   const [values, setValues] = useState<Record<string, number>>({
     marketing_ad_prob: 60,
     marketing_rate_per_hour: 5,
@@ -81,6 +83,7 @@ export default function AdminMarketingPage() {
         setDailyEnabled((String(s.marketing_daily_enabled ?? 'false')).toLowerCase() === 'true' ? 'true' : 'false');
         setDailyTime(String(s.marketing_daily_time ?? '09:00') || '09:00');
         setDailyImage(String(s.marketing_daily_image ?? ''));
+        setPromoCode(String(s.marketing_promo_code ?? ''));
         const ad = parseFloat(s.marketing_ad_prob ?? '0.6');
         const adsPerDay = parseInt(s.marketing_ads_per_day ?? '2', 10);
         setValues((prev) => ({
@@ -106,8 +109,17 @@ export default function AdminMarketingPage() {
       }
       finally { setStatsLoading(false); }
     };
+    const fetchAdStats = async () => {
+      try {
+        const res = await adminAPI.marketingAds();
+        setAdStats(res.data || res);
+      } catch (e) {
+        setAdStats({ variants: [], attribution_days: 7, promo: { configured: '', active: false, line: '' } });
+      }
+    };
     fetch();
     fetchStats();
+    fetchAdStats();
   }, []);
 
   const reloadStats = async () => {
@@ -133,7 +145,12 @@ export default function AdminMarketingPage() {
         marketing_daily_enabled: dailyEnabled,
         marketing_daily_time: dailyTime || '09:00',
         marketing_daily_image: dailyImage.trim(),
+        marketing_promo_code: promoCode.trim(),
       });
+      try {
+        const res = await adminAPI.marketingAds();
+        setAdStats(res.data || res);
+      } catch { /* jadval keyingi yuklashda yangilanadi */ }
       toast.success('Marketing sozlamalari saqlandi ✅');
     } catch (e) { toast.error('Xatolik yuz berdi'); }
     finally { setIsSaving(false); }
@@ -389,6 +406,93 @@ export default function AdminMarketingPage() {
             </p>
           </div>
         </div>
+      </motion.div>
+
+      {/* ═══ Reklama samaradorligi ═══ */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.14 }}
+        className="glass-card p-6 mb-6"
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+            <FiTarget className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-white">Reklama samaradorligi</h2>
+            <p className="text-[11px] text-[#64748B]">
+              Har bir post variantining "Buyurtma berish" tugmasi alohida havola — kim botga kirgani va
+              {` ${adStats?.attribution_days ?? 7} `}kun ichida buyurtma bergani hisoblanadi
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+          <div>
+            <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-2">
+              Reklamadagi promokod
+            </label>
+            <input
+              type="text"
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value)}
+              placeholder="DONZO10"
+              className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-emerald-400/50"
+            />
+            <p className="text-[11px] text-[#64748B] mt-2">
+              Promokodlar bo'limidagi kodni yozing. Kod faqat <strong className="text-white">amalda</strong> bo'lsa
+              (faol, muddati o'tmagan, limiti tugamagan) reklamaga chiqadi. Bo'sh — promokod ko'rsatilmaydi.
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-xs">
+            <p className="text-[#94A3B8] font-semibold uppercase tracking-wider text-[11px] mb-2">Hozir reklamada</p>
+            {adStats?.promo?.active ? (
+              <p className="text-emerald-300" dangerouslySetInnerHTML={{ __html: adStats.promo.line }} />
+            ) : adStats?.promo?.configured ? (
+              <p className="text-amber-300">
+                «{adStats.promo.configured}» amalda emas (topilmadi, muddati o'tgan yoki limiti tugagan) — reklamaga chiqmaydi.
+              </p>
+            ) : (
+              <p className="text-[#64748B]">Promokod ko'rsatilmaydi.</p>
+            )}
+          </div>
+        </div>
+
+        {(adStats?.variants || []).length === 0 ? (
+          <p className="text-xs text-[#64748B]">
+            Hali ma'lumot yo'q — yangi reklamalar yuborilgach va odamlar tugmani bosgach shu yerda ko'rinadi.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[#64748B] border-b border-white/10">
+                  <th className="py-2 pr-3 font-semibold">Variant</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Yuborildi</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Botga kirdi</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Kirish %</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Buyurtma</th>
+                  <th className="py-2 font-semibold text-right">Tushum</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(adStats.variants as any[]).map((v: any) => (
+                  <tr key={v.variant} className="border-b border-white/5">
+                    <td className="py-2.5 pr-3 text-white">{v.label}</td>
+                    <td className="py-2.5 pr-3 text-right font-mono text-[#94A3B8]">{v.sends}</td>
+                    <td className="py-2.5 pr-3 text-right font-mono text-[#00F5FF]">{v.starts}</td>
+                    <td className="py-2.5 pr-3 text-right font-mono text-[#94A3B8]">{v.start_rate}%</td>
+                    <td className="py-2.5 pr-3 text-right font-mono text-emerald-400">{v.orders}</td>
+                    <td className="py-2.5 text-right font-mono text-white">
+                      {Math.round(v.revenue).toLocaleString('ru-RU')} so'm
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </motion.div>
 
       {/* ═══ Statistika ═══ */}

@@ -412,3 +412,28 @@ class ProofChannelTestView(APIView):
             return Response({'ok': False, 'detail': detail or "Telegram xabarni qabul qilmadi"},
                             status=status.HTTP_400_BAD_REQUEST)
         return Response({'ok': True, 'detail': 'Sinov xabari yuborildi'})
+
+
+class MarketingAdStatsView(APIView):
+    """
+    GET /api/v1/admin/marketing-ads/
+
+    Guruh reklamasining har bir varianti bo'yicha: yuborishlar, botga
+    kirishlar, kirgandan keyin 7 kun ichidagi buyurtmalar va tushum;
+    hamda hozir reklamada ko'rinadigan promokod holati.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        from apps.settings_app import marketing_ads
+        promo = marketing_ads.active_promo()
+        configured = (Setting.get_setting('marketing_promo_code', '') or '').strip()
+        return Response({
+            'variants': marketing_ads.ad_stats(),
+            'attribution_days': marketing_ads.ATTRIBUTION_DAYS,
+            'promo': {
+                'configured': configured,
+                'active': bool(promo),
+                'line': marketing_ads.promo_line(promo),
+            },
+        })
