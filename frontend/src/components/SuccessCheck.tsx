@@ -1,10 +1,19 @@
 'use client';
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { confetti, haptic } from '@/lib/gamefx';
 
 /** Buyurtma muvaffaqiyatli: chizilib chiqadigan belgi + tarqaluvchi to'lqinlar. */
 export default function SuccessCheck({ tone = 'success' }: { tone?: 'success' | 'pending' }) {
   const color = tone === 'success' ? '#34D399' : '#FBBF24';
+  // G'alaba lahzasi: konfetti + Telegram tebranishi (faqat muvaffaqiyatda)
+  useEffect(() => {
+    if (tone !== 'success') { haptic.notify('warning'); return; }
+    haptic.notify('success');
+    const t = setTimeout(() => confetti(80), 450);
+    return () => clearTimeout(t);
+  }, [tone]);
   return (
     <div className="success-check" style={{ ['--sc' as any]: color }}>
       <span className="success-ring" />

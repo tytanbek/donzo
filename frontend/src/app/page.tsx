@@ -70,6 +70,7 @@ function ReferralBannerInline() {
 import { useStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 import { BOT_URL } from '@/lib/brand';
+import PlayerCard from '@/components/PlayerCard';
 
 // ─── Game emoji mapping ───
 const gameIcons: Record<string, string> = {
@@ -286,6 +287,9 @@ export default function HomePage() {
           </div>
         );
       })()}
+
+      {/* ═══════════ O'YINCHI KARTASI — haqiqiy buyurtmalar bo'yicha daraja ═══════════ */}
+      {isAuthenticated && user && user.role === 'customer' && <PlayerCard user={user} />}
 
       {/* ═══════════ REFERRAL BANNER ═══════════ */}
       {isAuthenticated && user && user.role === 'customer' && (

@@ -1,0 +1,403 @@
+/* ═══════════════════════════════════════════════════════════════
+   DONZO — GAMING ATMOSFERA QATLAMI (liquid-glass ustidan)
+   Neon pol to'ri, HUD burchaklari, o'yinchi kartasi, uchqun va konfetti.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --gx-cyan: #00F5FF;
+  --gx-violet: #A855F7;
+  --gx-pink: #F472B6;
+  --gx-gold: #FACC15;
+}
+
+/* ─── 1. Neon "synthwave" pol to'ri — ekran pastida harakatlanadi ─── */
+.gx-floor {
+  position: fixed;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 46vh;
+  z-index: 0;
+  pointer-events: none;
+  perspective: 320px;
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.55) 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.55) 45%, transparent 100%);
+  opacity: 0.32;
+}
+.gx-floor::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -60px 0;
+  transform: rotateX(62deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(rgba(0, 245, 255, 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 85, 247, 0.5) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gx-grid-run 2.4s linear infinite;
+}
+/* Ufq chizig'i */
+.gx-floor::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gx-cyan), var(--gx-violet), var(--gx-cyan), transparent);
+  box-shadow: 0 0 18px var(--gx-cyan), 0 0 40px rgba(168, 85, 247, 0.6);
+  opacity: 0.5;
+}
+@keyframes gx-grid-run {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 48px, 0 0; }
+}
+
+/* Juda nozik skanlayn — CRT/HUD hissi, o'qishga xalaqit bermaydi */
+.gx-scan {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.022) 0,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* ─── 2. Effekt qatlami: uchqun, halqa, konfetti ─── */
+#gx-fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  overflow: hidden;
+}
+.gx-spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 8px var(--c), 0 0 16px var(--c);
+  animation: gx-spark 0.62s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+}
+@keyframes gx-spark {
+  0% { transform: translate(0, 0) scale(1.2); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+}
+.gx-ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid var(--c);
+  box-shadow: 0 0 14px var(--c);
+  animation: gx-ring 0.55s ease-out forwards;
+}
+@keyframes gx-ring {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(5); opacity: 0; }
+}
+.gx-confetti {
+  position: absolute;
+  top: -16px;
+  width: 8px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--c);
+  box-shadow: 0 0 6px var(--c);
+  animation-name: gx-fall;
+  animation-timing-function: cubic-bezier(0.3, 0.5, 0.5, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes gx-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translate(var(--x), 105vh) rotate(var(--r)); opacity: 0; }
+}
+
+/* ─── 3. O'yin kartalari: gologramma qiyshayishi + yaltirash ─── */
+.mini-card { position: relative; overflow: hidden; }
+.mini-card-emoji > img,
+.mini-card-emoji > span {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.mini-card.gx-tilting .mini-card-emoji > img,
+.mini-card.gx-tilting .mini-card-emoji > span {
+  transform: perspective(420px) rotateX(var(--gx-rx, 0)) rotateY(var(--gx-ry, 0)) scale(1.08);
+  transition-duration: 0.08s;
+}
+.mini-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    180px circle at var(--gx-mx, 50%) var(--gx-my, 0%),
+    rgba(0, 245, 255, 0.18),
+    rgba(168, 85, 247, 0.1) 40%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.mini-card.gx-tilting::after { opacity: 1; }
+
+/* "Top" kartasi — aylanib turuvchi neon hoshiya */
+@property --gx-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+/* liquid-glass.css .mini-card fonini !important bilan beradi — shu sabab bu yerda ham */
+html body .mini-card:has(.mini-card-ribbon) {
+  border: 1.5px solid transparent !important;
+  background-image:
+    linear-gradient(180deg, rgba(18, 26, 44, 0.94), rgba(9, 14, 28, 0.97)),
+    conic-gradient(from var(--gx-angle), var(--gx-cyan), var(--gx-violet), var(--gx-pink), var(--gx-gold), var(--gx-cyan)) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 26px rgba(0, 245, 255, 0.18) !important;
+  animation: gx-spin-border 4s linear infinite;
+}
+@keyframes gx-spin-border { to { --gx-angle: 360deg; } }
+
+/* ─── 4. Bo'lim sarlavhalari: HUD uslubi ─── */
+.mini-section-title {
+  position: relative;
+  padding-left: 12px;
+}
+.mini-section-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--gx-cyan), var(--gx-violet));
+  box-shadow: 0 0 10px var(--gx-cyan);
+  animation: gx-pulse-bar 2.4s ease-in-out infinite;
+}
+@keyframes gx-pulse-bar {
+  0%, 100% { opacity: 0.7; box-shadow: 0 0 6px var(--gx-cyan); }
+  50% { opacity: 1; box-shadow: 0 0 16px var(--gx-cyan), 0 0 24px var(--gx-violet); }
+}
+
+/* Top ro'yxat: 1-o'rin oltin, 2-kumush, 3-bronza */
+.top10-row:nth-child(1) .top10-rank {
+  background: linear-gradient(135deg, #FDE68A, #F59E0B);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.55);
+  animation: gx-gold-pulse 2s ease-in-out infinite;
+}
+.top10-row:nth-child(2) .top10-rank { background: linear-gradient(135deg, #F1F5F9, #94A3B8); }
+.top10-row:nth-child(3) .top10-rank { background: linear-gradient(135deg, #FDBA74, #B45309); }
+@keyframes gx-gold-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(250, 204, 21, 0.4); }
+  50% { box-shadow: 0 0 24px rgba(250, 204, 21, 0.8); }
+}
+
+/* ─── 5. O'yinchi kartasi (daraja + XP) ─── */
+.gx-player {
+  position: relative;
+  margin: 12px 16px 6px;
+  padding: 16px 16px 14px;
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--lv) 22%, transparent), transparent 55%),
+    linear-gradient(160deg, rgba(14, 20, 40, 0.88), rgba(8, 10, 24, 0.92));
+  border: 1px solid color-mix(in srgb, var(--lv) 40%, rgba(255, 255, 255, 0.08));
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.4),
+    0 0 28px color-mix(in srgb, var(--lv) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+.gx-player::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.08) 45%, transparent 60%);
+  transform: translateX(-100%);
+  animation: gx-sweep 4.5s ease-in-out infinite 1s;
+  pointer-events: none;
+}
+@keyframes gx-sweep {
+  0%, 60% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+.gx-hud-corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--lv);
+  opacity: 0.8;
+  filter: drop-shadow(0 0 4px var(--lv));
+}
+.gx-hud-corner.tl { top: 7px; left: 7px; border-right: 0; border-bottom: 0; border-top-left-radius: 5px; }
+.gx-hud-corner.tr { top: 7px; right: 7px; border-left: 0; border-bottom: 0; border-top-right-radius: 5px; }
+.gx-hud-corner.bl { bottom: 7px; left: 7px; border-right: 0; border-top: 0; border-bottom-left-radius: 5px; }
+.gx-hud-corner.br { bottom: 7px; right: 7px; border-left: 0; border-top: 0; border-bottom-right-radius: 5px; }
+
+.gx-player-row { display: flex; align-items: center; gap: 12px; }
+.gx-avatar {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--lv) 70%, #0b1020), #1e1b4b);
+  box-shadow: 0 0 0 2px var(--lv), 0 0 18px color-mix(in srgb, var(--lv) 60%, transparent);
+}
+.gx-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 16px; }
+.gx-lv-chip {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #05070f;
+  background: var(--lv);
+  box-shadow: 0 0 10px var(--lv);
+  white-space: nowrap;
+}
+.gx-player-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gx-rank {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lv);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gx-rank-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lv);
+  box-shadow: 0 0 8px var(--lv);
+  animation: gx-blink 1.6s ease-in-out infinite;
+}
+@keyframes gx-blink { 50% { opacity: 0.35; } }
+.gx-levelup {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  color: #05070f;
+  background: linear-gradient(90deg, var(--gx-gold), var(--gx-pink));
+  animation: gx-pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) both, gx-blink 1s ease-in-out 0.6s 4;
+}
+@keyframes gx-pop { from { transform: scale(0); } to { transform: scale(1); } }
+.gx-stat { display: flex; flex-direction: column; align-items: flex-end; }
+.gx-stat-num {
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--lv) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.gx-stat-lbl { font-size: 10px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.gx-xp {
+  position: relative;
+  height: 9px;
+  margin-top: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.gx-xp-fill {
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--lv), var(--gx-cyan), var(--gx-violet));
+  background-size: 200% 100%;
+  box-shadow: 0 0 12px var(--lv);
+  animation: gx-flow 3s linear infinite;
+  overflow: hidden;
+}
+@keyframes gx-flow { to { background-position: -200% 0; } }
+.gx-xp-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-120%);
+  animation: gx-sweep 2.6s ease-in-out infinite 1.4s;
+}
+.gx-xp-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: #94A3B8;
+}
+.gx-xp-meta b { color: #fff; }
+.gx-xp-link { color: var(--gx-cyan); font-weight: 700; white-space: nowrap; }
+
+/* ─── 6. Asosiy tugmalar: neon yaltirash o'tib turadi ─── */
+.pill-btn:not(.pill-btn-ghost),
+.glow-btn {
+  position: relative;
+  overflow: hidden;
+}
+.pill-btn:not(.pill-btn-ghost)::after,
+.glow-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.4) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: gx-sweep 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ─── 7. Harakatni kamaytirish ─── */
+@media (prefers-reduced-motion: reduce) {
+  .gx-floor::before,
+  .gx-player::before,
+  .gx-xp-fill,
+  .gx-xp-fill::after,
+  .gx-rank-dot,
+  .mini-section-title::before,
+  .top10-row:nth-child(1) .top10-rank,
+  html body .mini-card:has(.mini-card-ribbon),
+  .pill-btn::after,
+  .glow-btn::after { animation: none !important; }
+  .gx-scan { display: none; }
+}

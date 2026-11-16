@@ -13,10 +13,12 @@ import FloatingSupport from '@/components/FloatingSupport';
 import WebSocketInit from '@/components/WebSocketInit';
 import FragmentLogin from '@/components/FragmentLogin';
 import IosMotion from '@/components/IosMotion';
+import GameFx from '@/components/GameFx';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import './liquid-glass.css';
 import './liquid-glass-v4.css';
+import './gaming.css';
 import SeoTags from '@/components/SeoTags';
 
 // Routes that keep the classic desktop shell (staff panels only)
@@ -310,7 +312,11 @@ export default function RootLayout({
         <Particles />
         {/* iOS 26 liquid-glass harakat dvigateli — butun ilova uchun bir marta */}
         <AmbientGlow />
+        {/* Gaming atmosfera: neon pol to'ri, skanlayn, haptika va uchqunlar */}
+        {!isAdminShell && <div className="gx-floor" aria-hidden="true" />}
+        {!isAdminShell && <div className="gx-scan" aria-hidden="true" />}
         <IosMotion />
+        <GameFx />
         {isClassicShell ? (
           <div className="relative z-10 flex flex-col min-h-screen">
             {!isAdminShell && <Header />}
